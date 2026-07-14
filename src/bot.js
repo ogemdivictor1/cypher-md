@@ -631,25 +631,17 @@ const commands = {
           }
           const num = action?.replace(/[^0-9]/g, '');
           if (!num) throw new Error('❌ Usage: .vv self <number> | list | remove <number>');
+          vvTargets.add(num);
           try {
-            const ids = await conn.findUserId(num + '@s.whatsapp.net');
-            if (ids?.phoneNumber) {
-              const normalized = normalizeJid(ids.phoneNumber);
-              vvTargets.add(num);
-              if (normalized !== num) vvTargets.add(normalized);
-              if (ids.lid) {
-                const lidNum = normalizeJid(ids.lid);
-                if (lidNum && lidNum !== num && lidNum !== normalized) {
-                  vvTargets.add(lidNum);
-                  lidToPhone.set(lidNum, num);
-                }
+            const [result] = await conn.onWhatsApp(num);
+            if (result?.jid && result.exists) {
+              const resolved = normalizeJid(result.jid);
+              if (resolved && resolved !== num) {
+                vvTargets.add(resolved);
+                lidToPhone.set(resolved, num);
               }
-            } else {
-              vvTargets.add(num);
             }
-          } catch (err) {
-            vvTargets.add(num);
-          }
+          } catch (_) {}
           savePersistentData();
           return conn.sendMessage(from, { text: `✅ Intercepting view-once from *${num}* 👁️` });
         }
@@ -1099,7 +1091,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           console.log('[VV] stub, sending "?" quote');
           try {
             await conn.sendMessage(remoteJid, { text: '?' }, {
-              quoted: { key: msg.key }
+              quoted: { key: msg.key, message: { conversation: '' } }
             });
           } catch (err) {
             console.error('[VV] failed to send "?" quote:', err.message, err.stack);
