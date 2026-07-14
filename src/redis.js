@@ -4,8 +4,10 @@ const { initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 let redis;
 
 function initRedis(url, token) {
-  url = (url || '').replace(/^["']+|["']+$/g, '').trim();
-  token = (token || '').replace(/^["']+|["']+$/g, '').trim();
+  url = (url || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+  token = (token || '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+  if (!url.startsWith('https://')) throw new Error(`Invalid Redis URL: "${url}"`);
+  if (!token) throw new Error('Redis token is empty after sanitization');
   redis = new Redis({ url, token });
   return redis;
 }
