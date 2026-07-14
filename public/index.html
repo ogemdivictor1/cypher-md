@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYPHER MD</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+
+        body {
+            background-color: #0a0a0a;
+            color: #ff6600;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            background: rgba(0, 0, 0, 0.75);
+            border: 1px solid #ff6600;
+            border-radius: 12px;
+            padding: 40px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 0 30px rgba(255, 102, 0, 0.3);
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ff6600;
+            text-shadow: 0 0 20px rgba(255, 102, 0, 0.8);
+            margin-bottom: 8px;
+            letter-spacing: 4px;
+        }
+
+        .tagline {
+            font-size: 0.75rem;
+            color: #ff660099;
+            letter-spacing: 2px;
+            margin-bottom: 30px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            background: #111;
+            border: 1px solid #ff6600;
+            border-radius: 8px;
+            color: #ff6600;
+            font-size: 1rem;
+            font-family: 'Courier New', monospace;
+            outline: none;
+            margin-bottom: 16px;
+        }
+
+        input::placeholder {
+            color: #ff660055;
+        }
+
+        input:focus {
+            box-shadow: 0 0 10px rgba(255, 102, 0, 0.4);
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #ff6600;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #ff8833;
+            box-shadow: 0 0 20px rgba(255, 102, 0, 0.6);
+        }
+
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .code-box {
+            margin-top: 24px;
+            padding: 20px;
+            background: #111;
+            border: 1px solid #ff6600;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .code-label {
+            font-size: 0.75rem;
+            color: #ff660099;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .code {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #ff6600;
+            letter-spacing: 8px;
+            text-shadow: 0 0 20px rgba(255, 102, 0, 0.8);
+        }
+
+        .status {
+            margin-top: 16px;
+            font-size: 0.85rem;
+            min-height: 20px;
+            letter-spacing: 1px;
+        }
+
+        .status.success { color: #00ff88; }
+        .status.error { color: #ff3333; }
+        .status.info { color: #ff6600; }
+    </style>
+</head>
+<body>
+    <canvas id="matrix"></canvas>
+
+    <div class="container">
+        <div class="logo">CYPHER MD</div>
+        <div class="tagline">SEE IT. TOUCH IT. OBTAIN IT.</div>
+
+        <input type="text" id="phoneInput" placeholder="Enter phone number e.g. 2348012345678" />
+        <button id="connectBtn">CONNECT</button>
+
+        <div class="code-box" id="codeBox">
+            <div class="code-label">PAIRING CODE</div>
+            <div class="code" id="codeDisplay">--------</div>
+        </div>
+
+        <div class="status info" id="status">Enter your number to get started</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('matrix');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+
+        const fontSize = 16;
+        const columns = Math.floor(canvas.width / fontSize);
+        const drops = Array(columns).fill(1);
+
+        function drawMatrix() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.font = `${fontSize}px Courier New`;
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = Math.random() > 0.5 ? '1' : '0';
+                ctx.fillStyle = Math.random() > 0.8 ? '#ffffff' : '#ff6600';
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            }
+        }
+
+        setInterval(drawMatrix, 50);
+
+        window.addEventListener('resize', resizeCanvas);
+
+        const socket = io();
+        const connectBtn = document.getElementById('connectBtn');
+        const phoneInput = document.getElementById('phoneInput');
+        const codeBox = document.getElementById('codeBox');
+        const codeDisplay = document.getElementById('codeDisplay');
+        const status = document.getElementById('status');
+
+        connectBtn.addEventListener('click', () => {
+            const phoneNumber = phoneInput.value.trim();
+            if (!phoneNumber) {
+                status.className = 'status error';
+                status.textContent = 'Please enter a phone number';
+                return;
+            }
+            connectBtn.disabled = true;
+            status.className = 'status info';
+            status.textContent = 'Requesting pairing code...';
+            socket.emit('request-code', phoneNumber);
+        });
+
+        socket.on('pairing-code', (code) => {
+            codeBox.style.display = 'block';
+            codeDisplay.textContent = code;
+            status.className = 'status info';
+            status.textContent = 'Enter this code in WhatsApp > Linked Devices';
+        });
+
+        socket.on('paired', (msg) => {
+            status.className = 'status info';
+            status.textContent = '⏳ Session saved, starting bot...';
+        });
+
+        socket.on('connected', (msg) => {
+            status.className = 'status success';
+            status.textContent = '✅ WhatsApp Connected Successfully!';
+            codeBox.style.display = 'none';
+        });
+
+        socket.on('logged-out', (msg) => {
+            status.className = 'status error';
+            status.textContent = '❌ Logged out. Refresh to reconnect.';
+            connectBtn.disabled = false;
+        });
+
+        socket.on('error', (msg) => {
+            status.className = 'status error';
+            status.textContent = '❌ ' + msg;
+            connectBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>

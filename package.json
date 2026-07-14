@@ -1,0 +1,21 @@
+{
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node src/server.js",
+    "pair": "node src/pair.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@lordmega/baileys": "latest",
+    "@upstash/redis": "^1.38.0",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.22.0",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.34.5",
+    "socket.io": "^4.8.3"
+  }
+}
