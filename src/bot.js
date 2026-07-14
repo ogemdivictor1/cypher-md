@@ -126,8 +126,8 @@ const groupMetaCache = new Map();
 const GROUP_CACHE_TTL = 30000;
 const lidToPhone = new Map();
 const messageStore = new Map();
+const pendingReveals = new Set();
 const monitoredNumbers = new Set();
-const vvTargets = new Set();
 
 const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].replace(/[^0-9]/g, ''); };
 
@@ -158,16 +158,13 @@ function loadPersistentData() {
   try {
     if (fs.existsSync(VV_DATA_FILE)) {
       const data = JSON.parse(fs.readFileSync(VV_DATA_FILE, 'utf-8'));
-      if (Array.isArray(data.vvTargets)) {
-        for (const t of data.vvTargets) vvTargets.add(t);
-      }
       if (Array.isArray(data.monitoredNumbers)) {
         for (const n of data.monitoredNumbers) monitoredNumbers.add(n);
       }
       if (data.lidToPhone && typeof data.lidToPhone === 'object') {
         for (const [k, v] of Object.entries(data.lidToPhone)) lidToPhone.set(k, v);
       }
-      console.log(`[DATA] loaded ${vvTargets.size} VV, ${monitoredNumbers.size} monitored`);
+      console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${lidToPhone.size} LID mappings`);
     }
   } catch (err) {
     console.error('[DATA] load failed:', err.message);
@@ -177,7 +174,6 @@ function loadPersistentData() {
 function savePersistentData() {
   try {
     const data = {
-      vvTargets: [...vvTargets],
       monitoredNumbers: [...monitoredNumbers],
       lidToPhone: Object.fromEntries(lidToPhone),
     };
@@ -611,41 +607,6 @@ const commands = {
   vv: {
     handler: async (conn, from, args, msg, sender) => {
       try {
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'self') {
-          const action = args[1];
-          if (action === 'list') {
-            const list = [...vvTargets].map(j => `• ${j}`).join('\n') || 'None';
-            return conn.sendMessage(from, { text: `👁️ Intercepted numbers:\n${list}` });
-          }
-          if (action === 'clear') {
-            vvTargets.clear();
-            lidToPhone.clear();
-            savePersistentData();
-            return conn.sendMessage(from, { text: '✅ Stopped intercepting all numbers.' });
-          }
-          if (action === 'remove' && args[2]) {
-            vvTargets.delete(args[2]);
-            savePersistentData();
-            return conn.sendMessage(from, { text: `✅ Stopped intercepting ${args[2]}.` });
-          }
-          const num = action?.replace(/[^0-9]/g, '');
-          if (!num) throw new Error('❌ Usage: .vv self <number> | list | remove <number>');
-          vvTargets.add(num);
-          try {
-            const [result] = await conn.onWhatsApp(num + '@s.whatsapp.net');
-            if (result?.jid && result.exists) {
-              const resolved = normalizeJid(result.jid);
-              if (resolved && resolved !== num) {
-                vvTargets.add(resolved);
-                lidToPhone.set(resolved, num);
-              }
-            }
-          } catch (_) {}
-          savePersistentData();
-          return conn.sendMessage(from, { text: `✅ Intercepting view-once from *${num}* 👁️` });
-        }
-
         // ── .vv reveal ──
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         if (!ctx?.stanzaId) throw new Error('❌ Reply to a view-once message.');
@@ -817,11 +778,106 @@ const commands = {
   },
   help: {
     handler: async (conn, from) => {
-      const helpText = `*📋 CYPHER MD Commands*\n\n` +
-        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🛡️ .antilink / .al\n📢 .tagall / .tag\n👁️ .monitor / .mon <number>\n📸 .vv (reply to view-once)\n👁️ .vv self <number>\n🆔 .id / .jid\n\n*Admin:*\n.kick .warn .unwarn .ban .delete .mute .unmute .antilink on|off`;
+      const helpText = `🤖 *Welcome to CYPHER MD* 🤖\n\n` +
+        `Hi there! I'm CYPHER MD, a powerful WhatsApp bot crafted by *CYPHER.DEV*. ` +
+        `Think of me as your personal assistant inside WhatsApp — I can manage groups, ` +
+        `download media, monitor activity, reveal view-once messages, and much more. ` +
+        `Below is a complete tour of everything I can do, how to use each command, ` +
+        `and what to expect.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🔰 *GENERAL COMMANDS*\n\n` +
+        `• *.ping* / *.p*\n  Checks if I'm online and responding. If I'm alive, I'll reply with "Pong!" — ` +
+        `a quick way to test my connection.\n\n` +
+        `• *.time*\n  Shows the current server time (the machine I'm running on). Useful if you're ` +
+        `curious about my system clock.\n\n` +
+        `• *.runtime* / *.uptime*\n  Tells you how long I've been running since my last restart. ` +
+        `Handy for knowing if I just rebooted or if I've been online for days.\n\n` +
+        `• *.stats*\n  Displays command usage statistics — how many commands have been attempted ` +
+        `and how many succeeded. Gives you an idea of how active I've been.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🛠️ *UTILITY COMMANDS*\n\n` +
+        `• *.reverse* / *.r <text>*\n  Reverses the text you provide. Example: *.reverse hello* → "olleh". ` +
+        `Works with any text. No weird characters will break it.\n\n` +
+        `• *.quote*\n  Replies to a message to quote it with style. Not to be confused with the "?" ` +
+        `view-once trick — this is just a fancy quote bot. Usage: reply to any message with .quote.\n\n` +
+        `• *.bio*\n  Shows your current WhatsApp bio/status text. Just send .bio in any chat and I'll ` +
+        `fetch the status of the person you reply to, or your own if no reply.\n\n` +
+        `• *.getpp* [@user]\n  Gets the profile picture of a user. Reply to their message or mention ` +
+        `them. If no user is specified, I'll grab your own profile picture.\n\n` +
+        `• *.sticker* / *.s*\n  Converts an image or video into a WhatsApp sticker. Reply to an image ` +
+        `or video with .sticker. Images become static stickers, short videos become animated ones. ` +
+        `⚠️ Works best with images under 1MB.\n\n` +
+        `• *.toimage* / *.ti*\n  Converts a sticker back into a regular image. Reply to any sticker ` +
+        `with .toimage. Animated stickers will become a static image (first frame).\n\n` +
+        `• *.id* / *.jid*\n  Shows the JID (WhatsApp ID) of a user or the current chat. Reply to a ` +
+        `message to see that user's JID, or just send .id in a chat to see the chat JID. Useful ` +
+        `for debugging or if you need to reference someone's exact ID.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `👁️ *VIEW-ONCE & MONITORING*\n\n` +
+        `• *.monitor* / *.mon <number>*\n  Adds a phone number to my watchlist. I will silently save ` +
+        `every message that person sends in any group we share — including text, images, and captions. ` +
+        `If that person later deletes/recalls a message, I will forward the saved copy to you ` +
+        `automatically. How to use:\n` +
+        `  - *.monitor 2348012345678* — watch a number\n` +
+        `  - *.monitor list* — show all monitored numbers\n` +
+        `  - *.monitor remove 2348012345678* — stop watching\n` +
+        `  - *.monitor clear* — remove all\n  ` +
+        `⚠️ Only works in DMs with me. Cannot monitor my own number.\n\n` +
+        `• *.vv* (reply to a view-once or recalled message)\n  Reveals a view-once message or a ` +
+        `deleted message that was captured by .monitor. Reply to the view-once stub or the ` +
+        `[Media] placeholder and I'll extract the content. How it handles the revealed content ` +
+        `depends on whether you specify a target number after .vv — if not, it sends the reveal ` +
+        `to the current chat. ⚠️ Only works if the VV has already been delivered with content ` +
+        `(not all VVs arrive as stubs).\n\n` +
+        `• *???* (reply to a view-once message)\n  A simpler, more private alternative to .vv. ` +
+        `Reply to ANY view-once message with ??? (three question marks, no dot) and I'll extract ` +
+        `the content and send it directly to YOUR DM — even if the VV is in a group chat. ` +
+        `The sender never knows. If the VV is a stub (no content yet), I'll silently request ` +
+        `a re-send and forward it to your DM when it arrives. ⚠️ Only works for you (the bot ` +
+        `owner) — others can't use this.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🛡️ *GROUP MANAGEMENT (Admin only)*\n\n` +
+        `These commands only work in groups where I'm an admin, and only for you:\n\n` +
+        `• *.kick* — Remove a member from the group. Reply to their message or use .kick @mention.\n` +
+        `• *.warn* — Issue a warning to a member. 3 warnings = auto-kick.\n` +
+        `• *.unwarn* — Remove a warning from a member. Resets their warning count.\n` +
+        `• *.ban* — Ban a member. Alias for remove. Same as .kick.\n` +
+        `• *.delete* — Delete a message I sent. Reply to my message with .delete.\n` +
+        `• *.mute* — Mute a member (restrict from sending messages in the group).\n` +
+        `• *.unmute* — Unmute a previously muted member.\n` +
+        `• *.antilink on|off* — Toggle anti-link protection. When on, I'll delete messages ` +
+        `containing links and warn the sender. 3 warnings = auto-kick. `.antilink` toggles ` +
+        `for the current group only.\n` +
+        `• *.tagall* / *.tag* — Mention all group members in a message. Use with a message ` +
+        `to broadcast an announcement.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `💡 *TIPS & NOTES*\n\n` +
+        `• All commands start with a dot (.). The only exception is ??? which is a bare command.\n` +
+        `• You can use aliases — e.g. .p for .ping, .mon for .monitor, .s for .sticker.\n` +
+        `• Most commands work in both DMs and groups unless stated otherwise.\n` +
+        `• .antilink, .tagall, .kick, .warn, etc. only work in groups and require me to be admin.\n` +
+        `• .monitor and ??? are owner-only commands.\n` +
+        `• View-once reveal (???) sends the content to your DM silently — no trace in the original chat.\n` +
+        `• If a command doesn't work, make sure you're using the correct format and that I have ` +
+        `the necessary permissions (admin in groups).\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Thank you for using CYPHER MD! 🙏\n\n` +
+        `I hope I serve you well. If you encounter any issues or have feature requests, ` +
+        `please reach out to my creator, *CYPHER.DEV*. Enjoy the ride! 🚀\n\n` +
+        `*— CYPHER MD, built with ❤️ by CYPHER.DEV*`;
       await conn.sendMessage(from, { text: helpText });
     },
     aliases: ['h'],
+    args: [],
+    groupAdminRequired: false,
+  },
+  menu: {
+    handler: async (conn, from) => {
+      const menuText = `*📋 CYPHER MD Commands*\n\n` +
+        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🛡️ .antilink / .al\n📢 .tagall / .tag\n👁️ .monitor / .mon <number>\n📸 .vv (reply to view-once)\n❓ ??? (reply to VV → DM)\n🆔 .id / .jid\n\n*Admin:*\n.kick .warn .unwarn .ban .delete .mute .unmute .antilink on|off\n\n_Send .help for a detailed guide_`;
+      await conn.sendMessage(from, { text: menuText });
+    },
+    aliases: ['m'],
     args: [],
     groupAdminRequired: false,
   }
@@ -1051,54 +1107,78 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       }
     }
 
+    // ── ??? reveal view-once to owner DM ──
+    if (body === '???') {
+      const from = msg.key.remoteJid;
+      const isGroup = from.endsWith('@g.us');
+      const sender = isGroup ? (msg.key.participant || msg.participant || from) : from;
+      if ((msg.key.fromMe) || (normalizeJid(sender) === ownerNumber)) {
+        const ctx = msg.message?.extendedTextMessage?.contextInfo;
+        if (ctx?.stanzaId && ctx?.quotedMessage) {
+          const isVV = !!(ctx.quotedMessage?.viewOnceMessageV2 || ctx.quotedMessage?.viewOnceMessage || ctx.quotedMessage?.viewOnceMessageV2Extension);
+          if (!isVV) return;
+          const ownerJid = ownerNumber + '@s.whatsapp.net';
+          const quotedKey = {
+            key: { remoteJid: from, id: ctx.stanzaId, participant: ctx.participant, fromMe: false },
+            message: ctx.quotedMessage
+          };
+          const innerMsg = ctx.quotedMessage?.viewOnceMessageV2?.message
+            || ctx.quotedMessage?.viewOnceMessage?.message
+            || ctx.quotedMessage?.viewOnceMessageV2Extension?.message;
+          if (innerMsg && (innerMsg.imageMessage || innerMsg.videoMessage || innerMsg.audioMessage)) {
+            try {
+              const buffer = await downloadMediaMessage(quotedKey, 'buffer', {}, { logger: pino({ level: 'silent' }) });
+              if (buffer) {
+                if (innerMsg.imageMessage) await conn.sendMessage(ownerJid, { image: buffer, caption: '👁️ VV revealed' });
+                else if (innerMsg.videoMessage) await conn.sendMessage(ownerJid, { video: buffer, caption: '👁️ VV revealed' });
+                else if (innerMsg.audioMessage) await conn.sendMessage(ownerJid, { audio: buffer, mimetype: 'audio/ogg' });
+              }
+            } catch (e) {
+              console.error('[???] download failed:', e.message);
+            }
+            return;
+          }
+          await conn.sendMessage(from, { text: '?' }, {
+            quoted: { key: { remoteJid: from, id: ctx.stanzaId, participant: ctx.participant, fromMe: false }, message: { conversation: '' } }
+          });
+          pendingReveals.add(ctx.stanzaId);
+          console.log('[???] "?" sent for stub, waiting for re-send');
+        }
+        return;
+      }
+    }
+
     // ── "?" quotes: just pass through — the re-sent VV is caught below ──
     if (msg.key?.fromMe && body === '?') {
       console.log('[VV] "?" sent, waiting for re-sent VV from target');
       return;
     }
 
-    // ── View-once interception: detect target VV → direct rvo or "?" quote ──
-    if (msg?.key && !msg.key.fromMe && vvTargets.size) {
+    // ── View-once re-send interception (handles "???") ──
+    if (msg?.key && !msg.key.fromMe && pendingReveals.has(msg.key.id)) {
+      pendingReveals.delete(msg.key.id);
       const remoteJid = msg.key.remoteJid;
-      const sender = remoteJid.endsWith('@g.us') ? (msg.key.participant || msg.participant || remoteJid) : remoteJid;
-      const norm = normalizeJid(sender);
-      console.log('[VV] type=%s hasContent=%s isViewOnce=%s sender=%s norm=%s targets=%s', type,
-        !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension),
-        msg.key?.isViewOnce, sender, norm, [...vvTargets].join(','));
-      if (vvTargets.has(norm) || (lidToPhone.has(norm) && vvTargets.has(lidToPhone.get(norm)))) {
-        const hasContent = !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension);
-        if (hasContent) {
-          const ownerJid = phoneNumber + '@s.whatsapp.net';
+      const hasContent = !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension);
+      console.log('[VV] re-send for key=%s hasContent=%s', msg.key.id, hasContent);
+      if (hasContent) {
+        const ownerJid = ownerNumber + '@s.whatsapp.net';
+        try {
+          await conn.rvo(msg, ownerJid);
+          console.log('[VV] rvo OK');
+        } catch (rvoErr) {
+          console.log('[VV] rvo fallback');
           try {
-            await conn.rvo(msg, ownerJid);
-            console.log('[VV] rvo OK');
-          } catch (rvoErr) {
-            console.log('[VV] rvo fallback');
-            try {
-              const inner = msg.message?.viewOnceMessageV2?.message
-                || msg.message?.viewOnceMessage?.message
-                || msg.message?.viewOnceMessageV2Extension?.message;
-              const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
-              if (buffer && inner?.imageMessage) await conn.sendMessage(ownerJid, { image: buffer, caption: '👁️ Intercepted view-once' });
-              else if (buffer && inner?.videoMessage) await conn.sendMessage(ownerJid, { video: buffer, caption: '👁️ Intercepted view-once' });
-              else if (buffer && inner?.audioMessage) await conn.sendMessage(ownerJid, { audio: buffer, mimetype: 'audio/ogg' });
-            } catch (_) {}
-          }
-          return;
-        }
-        // Unavailable stub (isViewOnce but no content) → reply "?" to resolve via quote
-        if (msg.key?.isViewOnce) {
-          console.log('[VV] stub, sending "?" quote');
-          try {
-            await conn.sendMessage(remoteJid, { text: '?' }, {
-              quoted: { key: msg.key, message: { conversation: '' } }
-            });
-          } catch (err) {
-            console.error('[VV] failed to send "?" quote:', err.message, err.stack);
-          }
-          return;
+            const inner = msg.message?.viewOnceMessageV2?.message
+              || msg.message?.viewOnceMessage?.message
+              || msg.message?.viewOnceMessageV2Extension?.message;
+            const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
+            if (buffer && inner?.imageMessage) await conn.sendMessage(ownerJid, { image: buffer, caption: '👁️ VV revealed' });
+            else if (buffer && inner?.videoMessage) await conn.sendMessage(ownerJid, { video: buffer, caption: '👁️ VV revealed' });
+            else if (buffer && inner?.audioMessage) await conn.sendMessage(ownerJid, { audio: buffer, mimetype: 'audio/ogg' });
+          } catch (_) {}
         }
       }
+      return;
     }
 
     // Non-owner: protocol messages (delete detection)
