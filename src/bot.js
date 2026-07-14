@@ -418,6 +418,12 @@ const commands = {
     handler: async (conn, from, args, msg, sender) => {
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       let target = ctx?.participant || sender;
+      if (ctx?.stanzaId && ctx?.participant && ctx.participant.endsWith('@lid')) {
+        try {
+          const resolved = await resolveJid(ctx.participant, conn);
+          if (resolved !== ctx.participant) target = resolved;
+        } catch (_) {}
+      }
       if (!ctx && args[0]) target = args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net';
       try {
         const ppUrl = await conn.profilePictureUrl(target, 'image');
