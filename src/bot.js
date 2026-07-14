@@ -633,7 +633,7 @@ const commands = {
           if (!num) throw new Error('❌ Usage: .vv self <number> | list | remove <number>');
           vvTargets.add(num);
           try {
-            const [result] = await conn.onWhatsApp(num);
+            const [result] = await conn.onWhatsApp(num + '@s.whatsapp.net');
             if (result?.jid && result.exists) {
               const resolved = normalizeJid(result.jid);
               if (resolved && resolved !== num) {
