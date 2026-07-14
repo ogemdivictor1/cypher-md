@@ -725,7 +725,7 @@ const commands = {
       const participants = meta.participants.filter(p => p.id !== botJid);
       const allJids = participants.map(p => p.id);
       const text = args.join(' ') || 'Hey everyone!';
-      await conn.sendMessage(from, { text: `📢 @all\n\n${text}`, mentions: allJids });
+      await conn.sendMessage(from, { text: `SORRY BUT MY USER ASKED  CYPHER MD TO  MENTIONED EVERYONE 👀🤷‍♂️\n\n${text}`, mentions: allJids });
     },
     aliases: ['tag', 'everyone'],
     args: ['message (optional)'],
