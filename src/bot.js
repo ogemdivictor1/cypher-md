@@ -846,7 +846,7 @@ const commands = {
         `• *.mute* — Mute a member (restrict from sending messages in the group).\n` +
         `• *.unmute* — Unmute a previously muted member.\n` +
         `• *.antilink on|off* — Toggle anti-link protection. When on, I'll delete messages ` +
-        `containing links and warn the sender. 3 warnings = auto-kick. `.antilink` toggles ` +
+        `containing links and warn the sender. 3 warnings = auto-kick. '.antilink' toggles ` +
         `for the current group only.\n` +
         `• *.tagall* / *.tag* — Mention all group members in a message. Use with a message ` +
         `to broadcast an announcement.\n\n` +
