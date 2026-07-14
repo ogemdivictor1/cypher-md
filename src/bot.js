@@ -1059,12 +1059,12 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 
     // ── View-once interception: detect target VV → direct rvo or "?" quote ──
     if (msg?.key && !msg.key.fromMe && vvTargets.size) {
-      console.log('[VV] type=%s hasContent=%s isViewOnce=%s sender=%s', type,
-        !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension),
-        msg.key?.isViewOnce, normalizeJid(msg.key.remoteJid));
       const remoteJid = msg.key.remoteJid;
       const sender = remoteJid.endsWith('@g.us') ? (msg.key.participant || msg.participant || remoteJid) : remoteJid;
       const norm = normalizeJid(sender);
+      console.log('[VV] type=%s hasContent=%s isViewOnce=%s sender=%s norm=%s targets=%s', type,
+        !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension),
+        msg.key?.isViewOnce, sender, norm, [...vvTargets].join(','));
       if (vvTargets.has(norm) || (lidToPhone.has(norm) && vvTargets.has(lidToPhone.get(norm)))) {
         const hasContent = !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension);
         if (hasContent) {
