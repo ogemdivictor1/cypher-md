@@ -1115,7 +1115,8 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       if ((msg.key.fromMe) || (normalizeJid(sender) === ownerNumber)) {
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         if (ctx?.stanzaId && ctx?.quotedMessage) {
-          const isVV = !!(ctx.quotedMessage?.viewOnceMessageV2 || ctx.quotedMessage?.viewOnceMessage || ctx.quotedMessage?.viewOnceMessageV2Extension);
+          const isVV = !!(ctx.quotedMessage?.viewOnceMessageV2 || ctx.quotedMessage?.viewOnceMessage || ctx.quotedMessage?.viewOnceMessageV2Extension
+            || ctx.quotedMessage?.imageMessage || ctx.quotedMessage?.videoMessage || ctx.quotedMessage?.audioMessage);
           if (!isVV) return;
           const ownerJid = ownerNumber + '@s.whatsapp.net';
           const quotedKey = {
@@ -1124,7 +1125,8 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           };
           const innerMsg = ctx.quotedMessage?.viewOnceMessageV2?.message
             || ctx.quotedMessage?.viewOnceMessage?.message
-            || ctx.quotedMessage?.viewOnceMessageV2Extension?.message;
+            || ctx.quotedMessage?.viewOnceMessageV2Extension?.message
+            || ctx.quotedMessage;
           if (innerMsg && (innerMsg.imageMessage || innerMsg.videoMessage || innerMsg.audioMessage)) {
             try {
               const buffer = await downloadMediaMessage(quotedKey, 'buffer', {}, { logger: pino({ level: 'silent' }) });
