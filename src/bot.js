@@ -725,14 +725,7 @@ const commands = {
       const participants = meta.participants.filter(p => p.id !== botJid);
       const allJids = participants.map(p => p.id);
       const text = args.join(' ') || 'Hey everyone!';
-      const isAdmin = participants.some(p => p.id === sender && p.admin);
-      const msgText = `👑 *CYPHER MD* | ${text}`;
-      if (isAdmin) {
-        await conn.sendMessage(from, { text: `📢 @all\n\n${msgText}`, mentions: allJids });
-      } else {
-        const mentions = allJids.map(j => `@${j.split('@')[0]}`).join(' ');
-        await conn.sendMessage(from, { text: `${mentions}\n\n${msgText}` });
-      }
+      await conn.sendMessage(from, { text: `📢 @all\n\n${text}`, mentions: allJids });
     },
     aliases: ['tag', 'everyone'],
     args: ['message (optional)'],
