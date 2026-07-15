@@ -131,7 +131,7 @@ const monitoredNumbers = new Set();
 const aiTargets = new Set();
 const aiGroups = new Set();
 const aiConversations = new Map();
-let geminiApiKey = '';
+let groqApiKey = '';
 
 const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].split('@')[0].split('.')[0].replace(/[^0-9]/g, ''); };
 
@@ -174,7 +174,7 @@ function loadPersistentData() {
       if (Array.isArray(data.aiGroups)) {
         for (const g of data.aiGroups) aiGroups.add(g);
       }
-      if (data.geminiApiKey) geminiApiKey = data.geminiApiKey;
+      if (data.groqApiKey) groqApiKey = data.groqApiKey;
       console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${aiTargets.size} AI targets, ${aiGroups.size} AI groups`);
     }
   } catch (err) {
@@ -189,7 +189,7 @@ function savePersistentData() {
       lidToPhone: Object.fromEntries(lidToPhone),
       aiTargets: [...aiTargets],
       aiGroups: [...aiGroups],
-      geminiApiKey: geminiApiKey,
+      groqApiKey: groqApiKey,
     };
     fs.writeFileSync(VV_DATA_FILE, JSON.stringify(data));
   } catch (err) {
@@ -732,20 +732,26 @@ const commands = {
       const sub = args[0]?.toLowerCase();
       if (sub === 'key') {
         const key = args.slice(1).join(' ').trim();
-        if (!key) throw new Error('❌ Usage: .aichat key <your_gemini_api_key>');
+        if (!key) throw new Error('❌ Usage: .aichat key <your_groq_api_key>');
         try {
-          const test = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
+          const test = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })
+            headers: {
+              'Authorization': `Bearer ${key}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              messages: [{ role: 'user', content: 'hi' }]
+            })
           });
           if (!test.ok) throw new Error(`API returned ${test.status}`);
         } catch (e) {
           throw new Error(`❌ Invalid API key: ${e.message}`);
         }
-        geminiApiKey = key;
+        groqApiKey = key;
         savePersistentData();
-        return conn.sendMessage(from, { text: '✅ Gemini API key set and verified.' });
+        return conn.sendMessage(from, { text: '✅ Groq API key set and verified.' });
       }
       if (sub === 'add' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
@@ -777,7 +783,7 @@ const commands = {
         return conn.sendMessage(from, { text: `✅ Removed AI group.` });
       }
       if (sub === 'addgc') throw new Error('❌ Send .aichat addgc in the target group.');
-      throw new Error('❌ Usage: .aichat key <key> | add <num> | remove <num> | list | addgc | removegc <jid>');
+      throw new Error('❌ Usage: .aichat key <groq_key> | add <num> | remove <num> | list | addgc | removegc <jid>');
     },
     aliases: ['ai'],
     args: ['optional'],
@@ -1334,7 +1340,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
 
     // ── AI auto-reply for targets and groups ──
-    if (geminiApiKey && (aiTargets.size || (aiGroups.size && isGroup))) {
+    if (groqApiKey && (aiTargets.size || (aiGroups.size && isGroup))) {
       const norm = normalizeJid(sender);
       let shouldAI = aiTargets.has(norm) || (lidToPhone.has(norm) && aiTargets.has(lidToPhone.get(norm)));
       if (!shouldAI && isGroup && aiGroups.has(from)) {
@@ -1347,16 +1353,22 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         try {
           const convKey = isGroup ? `${from}:${sender}` : sender;
           const history = aiConversations.get(convKey) || [];
-          history.push({ role: 'user', parts: [{ text: body }] });
+          history.push({ role: 'user', content: body });
           if (history.length > 20) history.splice(0, history.length - 20);
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: history })
+            headers: {
+              'Authorization': `Bearer ${groqApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              messages: history
+            })
           });
           const json = await res.json();
-          const reply = json?.candidates?.[0]?.content?.parts?.[0]?.text || '(no response)';
-          history.push({ role: 'model', parts: [{ text: reply }] });
+          const reply = json?.choices?.[0]?.message?.content || '(no response)';
+          history.push({ role: 'assistant', content: reply });
           aiConversations.set(convKey, history);
           await conn.sendMessage(from, { text: reply }, { quoted: msg });
         } catch (e) {
