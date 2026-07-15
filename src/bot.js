@@ -1155,11 +1155,14 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       } else {
         consecutive428.delete(phoneNumber);
       }
-      const shouldDelete = reason === DisconnectReason.connectionReplaced ||
-                           reason === 408 ||
-                           reason === 503;
+      if (reason === DisconnectReason.connectionReplaced) {
+        console.log(`[CONN] ${phoneNumber} connectionReplaced — stepping aside, session stays in shared storage`);
+        reconnectAttempts.delete(phoneNumber);
+        return;
+      }
+      const shouldDelete = reason === 408 || reason === 503;
       if (shouldDelete) {
-        console.log(`[CONN] ${phoneNumber} ${reason === DisconnectReason.connectionReplaced ? 'connectionReplaced' : reason} — purging session`);
+        console.log(`[CONN] ${phoneNumber} ${reason} — purging session`);
         await deleteAuthFolder(phoneNumber);
         if (useDb === 'upstash') {
           const { deleteAuthSession } = require('./redis');
