@@ -133,7 +133,7 @@ const aiGroups = new Set();
 const aiConversations = new Map();
 let geminiApiKey = '';
 
-const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].replace(/[^0-9]/g, ''); };
+const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].split('@')[0].split('.')[0].replace(/[^0-9]/g, ''); };
 
 const resolveJid = async (jid, conn) => {
   if (!jid) return jid;
@@ -731,10 +731,21 @@ const commands = {
     handler: async (conn, from, args) => {
       const sub = args[0]?.toLowerCase();
       if (sub === 'key') {
-        geminiApiKey = args.slice(1).join(' ').trim();
-        if (!geminiApiKey) throw new Error('❌ Usage: .aichat key <your_gemini_api_key>');
+        const key = args.slice(1).join(' ').trim();
+        if (!key) throw new Error('❌ Usage: .aichat key <your_gemini_api_key>');
+        try {
+          const test = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })
+          });
+          if (!test.ok) throw new Error(`API returned ${test.status}`);
+        } catch (e) {
+          throw new Error(`❌ Invalid API key: ${e.message}`);
+        }
+        geminiApiKey = key;
         savePersistentData();
-        return conn.sendMessage(from, { text: '✅ Gemini API key set.' });
+        return conn.sendMessage(from, { text: '✅ Gemini API key set and verified.' });
       }
       if (sub === 'add' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
@@ -1329,7 +1340,8 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       if (!shouldAI && isGroup && aiGroups.has(from)) {
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         const mentioned = ctx?.mentionedJid || [];
-        shouldAI = mentioned.includes(botJid) || ctx?.participant === botJid;
+        const botNorm = normalizeJid(botJid);
+        shouldAI = mentioned.some(j => normalizeJid(j) === botNorm) || normalizeJid(ctx?.participant) === botNorm;
       }
       if (shouldAI && body) {
         try {
