@@ -726,10 +726,18 @@ const commands = {
   ghost: {
     handler: async (conn, from, args, msg) => {
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let text = args.join(' ');
-      if (!text && ctx?.stanzaId) text = '👻';
-      if (!text) throw new Error('❌ Usage: .ghost <text> or reply to a message.');
-      await conn.sendMessage(from, { text, viewOnce: true });
+      const targetNum = args[0]?.replace(/[^0-9]/g, '') || '';
+      let target = ctx?.participant || from;
+      let text;
+      if (targetNum && targetNum.length > 6) {
+        target = targetNum + '@s.whatsapp.net';
+        text = args.slice(1).join(' ') || '👻';
+      } else {
+        text = args.join(' ');
+        if (!text && ctx?.stanzaId) text = '👻';
+      }
+      if (!text) throw new Error('❌ Usage: .ghost [number] <text> or reply.');
+      await conn.sendMessage(target, { text, viewOnce: true });
     },
     aliases: [],
     args: ['optional'],
