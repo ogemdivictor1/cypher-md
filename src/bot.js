@@ -1349,6 +1349,18 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         const botNorm = normalizeJid(botJid);
         shouldAI = mentioned.some(j => normalizeJid(j) === botNorm) || normalizeJid(ctx?.participant) === botNorm;
       }
+      if (!shouldAI && sender.endsWith('@lid') && !lidToPhone.has(norm)) {
+        try {
+          const ids = await conn.findUserId(sender);
+          if (ids?.phoneNumber) {
+            const phoneNorm = normalizeJid(ids.phoneNumber);
+            lidToPhone.set(norm, phoneNorm);
+            lidToPhone.set(phoneNorm, norm);
+            shouldAI = aiTargets.has(phoneNorm);
+            savePersistentData();
+          }
+        } catch (_) {}
+      }
       console.log(`[AI DEBUG] groqApiKey=${!!groqApiKey} aiTargets=${[...aiTargets]} sender=${sender} norm=${norm} shouldAI=${shouldAI} body="${body}"`);
       if (shouldAI && body) {
         try {
