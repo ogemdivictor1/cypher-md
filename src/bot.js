@@ -737,7 +737,7 @@ const commands = {
         if (!text && ctx?.stanzaId) text = '👻';
       }
       if (!text) throw new Error('❌ Usage: .ghost [number] <text> or reply.');
-      await conn.sendMessage(target, { text, viewOnce: true });
+      await conn.sendMessage(target, { text, viewOnceV2: true });
     },
     aliases: [],
     args: ['optional'],
