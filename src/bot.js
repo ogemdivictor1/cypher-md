@@ -929,6 +929,11 @@ const commands = {
         `Handy for knowing if I just rebooted or if I've been online for days.\n\n` +
         `• *.stats*\n  Displays command usage statistics — how many commands have been attempted ` +
         `and how many succeeded. Gives you an idea of how active I've been.\n\n` +
+        `• *.clearsession*\n  Deletes ALL data (auth sessions, settings, monitored numbers, ` +
+        `AI targets, group lists). Resets the bot to a completely clean state. ` +
+        `⚠️ You will need to re-pair after running this.\n\n` +
+        `• *.testimg*\n  Tests the media pipeline by sending a simple test image. ` +
+        `Useful to verify that media uploads are working correctly.\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `🛠️ *UTILITY COMMANDS*\n\n` +
         `• *.reverse* / *.r <text>*\n  Reverses the text you provide. Example: *.reverse hello* → "olleh". ` +
@@ -986,6 +991,27 @@ const commands = {
         `• *.tagall* / *.tag* — Mention all group members in a message. Use with a message ` +
         `to broadcast an announcement.\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🤖 *AI CHAT*\n\n` +
+        `• *.aichat key <groq_key>*\n  Sets a Groq API key for AI chat features. ` +
+        `The key is verified immediately — if it's invalid, you'll get an error. ` +
+        `Once set, the bot can respond to messages from target numbers.\n\n` +
+        `• *.aichat add <number>*\n  Add a phone number as an AI target. When that ` +
+        `person sends any message, the bot will auto-reply using Groq AI.\n\n` +
+        `• *.aichat remove <number>*\n  Remove a number from AI targets.\n\n` +
+        `• *.aichat list*\n  Show all AI targets, AI-enabled groups, and the current ` +
+        `system prompt.\n\n` +
+        `• *.aichat system <prompt>*\n  Set a custom system prompt for the AI. ` +
+        `This changes the bot's personality and behavior in all AI replies.\n\n` +
+        `• *.aichat system clear*\n  Clears the custom system prompt.\n\n` +
+        `• *.aichat addgc*\n  Send this in a group to enable AI replies there. ` +
+        `When someone tags or replies to the bot, it will respond with Groq AI.\n\n` +
+        `• *.aichat removegc <jid>*\n  Remove a group from AI-enabled groups.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `👻 *GHOST COMMAND*\n\n` +
+        `• *.ghost [number] <text>*\n  Sends a message as a view-once (disappearing) ` +
+        `message. If a number is provided, it sends to that number; otherwise ` +
+        `it sends to the current chat. The message disappears after being viewed.\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `💡 *TIPS & NOTES*\n\n` +
         `• All commands start with a dot (.). The only exception is ??? which is a bare command.\n` +
         `• You can use aliases — e.g. .p for .ping, .mon for .monitor, .s for .sticker.\n` +
@@ -1009,7 +1035,11 @@ const commands = {
   menu: {
     handler: async (conn, from) => {
       const menuText = `*📋 CYPHER MD Commands*\n\n` +
-        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🤖 .aichat / .ai <key|add|remove|list>\n🛡️ .antilink / .al\n📢 .tagall / .tag\n👁️ .monitor / .mon <number>\n📸 .vv (reply to view-once)\n❓ ??? (reply to VV → DM)\n👻 .ghost [number] <text>\n🆔 .id / .jid\n\n*Admin:*\n.kick .warn .unwarn .ban .delete .mute .unmute .antilink on|off\n\n_Send .help for a detailed guide_`;
+        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🧹 .clearsession\n🧪 .testimg\n🆔 .id / .jid\n\n` +
+        `🤖 *AI & MEDIA*\n👻 .ghost [num] <text>\n📸 .vv (reply to VV)\n❓ ??? (reply to VV → DM)\n👁️ .monitor / .mon <number>\n\n` +
+        `🤖 *AI CHAT*\n.aichat key <groq_key>\n.aichat add <num>\n.aichat remove <num>\n.aichat list\n.aichat system <prompt>\n.aichat addgc (in group)\n\n` +
+        `🛡️ *GROUP (Admin)*\n.kick .warn .unwarn .ban .delete .mute .unmute\n.antilink on|off .tagall / .tag\n\n` +
+        `_Send .help for a detailed guide_`;
       await conn.sendMessage(from, { text: menuText });
     },
     aliases: ['m'],
