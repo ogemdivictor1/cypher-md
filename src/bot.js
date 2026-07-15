@@ -737,7 +737,33 @@ const commands = {
         if (!text && ctx?.stanzaId) text = '👻';
       }
       if (!text) throw new Error('❌ Usage: .ghost [number] <text> or reply.');
-      await conn.sendMessage(target, { text, viewOnceV2: true });
+      const words = text.split(' ');
+      const lines = [];
+      let cur = '';
+      for (const w of words) {
+        if ((cur + ' ' + w).trim().length > 40) { lines.push(cur.trim()); cur = w; }
+        else cur += ' ' + w;
+      }
+      if (cur.trim()) lines.push(cur.trim());
+      if (!lines.length) lines.push('👻');
+      const lineHeight = 36;
+      const padY = 30;
+      const w = 500;
+      const h = Math.max(120, lines.length * lineHeight + padY * 2);
+      const tspan = lines.map((l, i) => `<tspan x="${w/2}" dy="${i === 0 ? 0 : lineHeight}">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</tspan>`).join('');
+      const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" rx="16" fill="#0f172a"/>
+        <rect x="2" y="2" width="${w-4}" height="${h-4}" rx="14" fill="none" stroke="#334155" stroke-width="1"/>
+        <text x="${w/2}" y="${padY + 24}" text-anchor="middle" fill="#e2e8f0" font-size="22" font-family="sans-serif">${tspan}</text>
+        <text x="${w - 14}" y="${h - 10}" text-anchor="end" fill="#475569" font-size="11" font-family="monospace">👻 ghost</text>
+      </svg>`;
+      try {
+        const imgBuf = await sharp(Buffer.from(svg)).png().toBuffer();
+        await conn.sendMessage(target, { image: imgBuf, viewOnceV2: true });
+      } catch (err) {
+        console.error('[GHOST] image render failed, falling back:', err.message);
+        await conn.sendMessage(target, { text, viewOnceV2: true });
+      }
     },
     aliases: [],
     args: ['optional'],
