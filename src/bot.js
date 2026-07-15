@@ -734,7 +734,7 @@ const commands = {
         const key = args.slice(1).join(' ').trim();
         if (!key) throw new Error('❌ Usage: .aichat key <your_gemini_api_key>');
         try {
-          const test = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+          const test = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] })
@@ -1349,7 +1349,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           const history = aiConversations.get(convKey) || [];
           history.push({ role: 'user', parts: [{ text: body }] });
           if (history.length > 20) history.splice(0, history.length - 20);
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: history })
