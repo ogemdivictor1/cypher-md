@@ -343,6 +343,31 @@ const commands = {
     args: ['optional'],
     groupAdminRequired: false,
   },
+  cleardb: {
+    handler: async (conn, from) => {
+      monitoredNumbers.clear();
+      lidToPhone.clear();
+      aiTargets.clear();
+      aiGroups.clear();
+      groqApiKey = '';
+      aiSystemPrompt = '';
+      aiConversations.clear();
+      antilinkEnabled.clear();
+      antilinkWarnings.clear();
+      fs.writeFileSync(VV_DATA_FILE, JSON.stringify({
+        monitoredNumbers: [],
+        lidToPhone: {},
+        aiTargets: [],
+        aiGroups: [],
+        groqApiKey: '',
+        aiSystemPrompt: ''
+      }));
+      await conn.sendMessage(from, { text: '🗄️ Database wiped (all persistent data cleared).' });
+    },
+    aliases: ['wipedb', 'resetdb'],
+    args: [],
+    groupAdminRequired: false,
+  },
   ping: {
     handler: async (conn, from, args, msg, sender) => {
       console.log(`[PING] from="${from}" sender="${sender}"`);
