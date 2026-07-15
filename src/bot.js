@@ -132,6 +132,7 @@ const aiTargets = new Set();
 const aiGroups = new Set();
 const aiConversations = new Map();
 let groqApiKey = '';
+let aiSystemPrompt = '';
 
 const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].split('@')[0].split('.')[0].replace(/[^0-9]/g, ''); };
 
@@ -175,6 +176,7 @@ function loadPersistentData() {
         for (const g of data.aiGroups) aiGroups.add(g);
       }
       if (data.groqApiKey) groqApiKey = data.groqApiKey;
+      if (data.aiSystemPrompt) aiSystemPrompt = data.aiSystemPrompt;
       console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${aiTargets.size} AI targets, ${aiGroups.size} AI groups`);
     }
   } catch (err) {
@@ -190,6 +192,7 @@ function savePersistentData() {
       aiTargets: [...aiTargets],
       aiGroups: [...aiGroups],
       groqApiKey: groqApiKey,
+      aiSystemPrompt: aiSystemPrompt,
     };
     fs.writeFileSync(VV_DATA_FILE, JSON.stringify(data));
   } catch (err) {
@@ -769,7 +772,8 @@ const commands = {
       if (sub === 'list') {
         const users = [...aiTargets].map(n => `• ${n}`).join('\n') || 'None';
         const groups = [...aiGroups].map(j => `• ${j}`).join('\n') || 'None';
-        return conn.sendMessage(from, { text: `🎯 AI targets:\n${users}\n\n👥 AI groups:\n${groups}` });
+        const prompt = aiSystemPrompt ? aiSystemPrompt.slice(0, 60) + (aiSystemPrompt.length > 60 ? '...' : '') : '(none)';
+        return conn.sendMessage(from, { text: `🎯 AI targets:\n${users}\n\n👥 AI groups:\n${groups}\n\n🧠 System prompt: ${prompt}` });
       }
       if (sub === 'addgc') {
         if (!from.endsWith('@g.us')) throw new Error('❌ Send this in the target group.');
@@ -782,8 +786,18 @@ const commands = {
         savePersistentData();
         return conn.sendMessage(from, { text: `✅ Removed AI group.` });
       }
+      if ((sub === 'system' || sub === 'prompt') && args.slice(1).join(' ').trim()) {
+        aiSystemPrompt = args.slice(1).join(' ').trim();
+        savePersistentData();
+        return conn.sendMessage(from, { text: `✅ AI system prompt set.` });
+      }
+      if ((sub === 'system' || sub === 'prompt') && args[1] === 'clear') {
+        aiSystemPrompt = '';
+        savePersistentData();
+        return conn.sendMessage(from, { text: `✅ AI system prompt cleared.` });
+      }
       if (sub === 'addgc') throw new Error('❌ Send .aichat addgc in the target group.');
-      throw new Error('❌ Usage: .aichat key <groq_key> | add <num> | remove <num> | list | addgc | removegc <jid>');
+      throw new Error('❌ Usage: .aichat key <groq_key> | add <num> | remove <num> | list | addgc | removegc <jid> | system <prompt>');
     },
     aliases: ['ai'],
     args: ['optional'],
@@ -1361,13 +1375,15 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           }
         } catch (_) {}
       }
-      console.log(`[AI DEBUG] groqApiKey=${!!groqApiKey} aiTargets=${[...aiTargets]} sender=${sender} norm=${norm} shouldAI=${shouldAI} body="${body}"`);
       if (shouldAI && body) {
         try {
           const convKey = isGroup ? `${from}:${sender}` : sender;
           const history = aiConversations.get(convKey) || [];
           history.push({ role: 'user', content: body });
           if (history.length > 20) history.splice(0, history.length - 20);
+          const messages = aiSystemPrompt
+            ? [{ role: 'system', content: aiSystemPrompt }, ...history]
+            : history;
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -1376,7 +1392,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
             },
             body: JSON.stringify({
               model: 'llama-3.3-70b-versatile',
-              messages: history
+              messages
             })
           });
           const json = await res.json();
