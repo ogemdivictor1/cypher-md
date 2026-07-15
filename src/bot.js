@@ -1349,6 +1349,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         const botNorm = normalizeJid(botJid);
         shouldAI = mentioned.some(j => normalizeJid(j) === botNorm) || normalizeJid(ctx?.participant) === botNorm;
       }
+      console.log(`[AI DEBUG] groqApiKey=${!!groqApiKey} aiTargets=${[...aiTargets]} sender=${sender} norm=${norm} shouldAI=${shouldAI} body="${body}"`);
       if (shouldAI && body) {
         try {
           const convKey = isGroup ? `${from}:${sender}` : sender;
