@@ -1361,6 +1361,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         const mentioned = ctx?.mentionedJid || [];
         const botNorm = normalizeJid(botJid);
+        console.log(`[AI GC DEBUG] from=${from} aiGroups.has=${aiGroups.has(from)} botJid=${botJid} botNorm=${botNorm} mentioned=${JSON.stringify(mentioned)} ctxParticipant=${ctx?.participant} msgType=${msg.message?.conversation ? 'conversation' : msg.message?.extendedTextMessage ? 'extended' : 'other'}`);
         shouldAI = mentioned.some(j => normalizeJid(j) === botNorm) || normalizeJid(ctx?.participant) === botNorm;
       }
       if (!shouldAI && sender.endsWith('@lid') && !lidToPhone.has(norm)) {
