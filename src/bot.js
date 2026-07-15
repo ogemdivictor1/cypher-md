@@ -962,7 +962,7 @@ const commands = {
         `  - *.monitor list* — show all monitored numbers\n` +
         `  - *.monitor remove 2348012345678* — stop watching\n` +
         `  - *.monitor clear* — remove all\n  ` +
-        `⚠️ Only works in DMs with me. Cannot monitor my own number.\n\n` +
+        `⚠️ Only works in your message yourself interface. Cannot monitor my own number.\n\n` +
         `• *.vv* (reply to a view-once or recalled message)\n  Reveals a view-once message or a ` +
         `deleted message that was captured by .monitor. Reply to the view-once stub or the ` +
         `[Media] placeholder and I'll extract the content. How it handles the revealed content ` +
@@ -1010,7 +1010,7 @@ const commands = {
         `👻 *GHOST COMMAND*\n\n` +
         `• *.ghost [number] <text>*\n  Sends a message as a view-once (disappearing) ` +
         `message. If a number is provided, it sends to that number; otherwise ` +
-        `it sends to the current chat. The message disappears after being viewed.\n\n` +
+        `it sends to the current chat.\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `💡 *TIPS & NOTES*\n\n` +
         `• All commands start with a dot (.). The only exception is ??? which is a bare command.\n` +
@@ -1025,7 +1025,7 @@ const commands = {
         `Thank you for using CYPHER MD! 🙏\n\n` +
         `I hope I serve you well. If you encounter any issues or have feature requests, ` +
         `please reach out to my creator, *CYPHER.DEV*. Enjoy the ride! 🚀\n\n` +
-        `*— CYPHER MD, built with ❤️ by CYPHER.DEV*`;
+        `*— >CYPHER MD, built by CYPHER.DEV*`;
       await conn.sendMessage(from, { text: helpText });
     },
     aliases: ['h'],
@@ -1220,7 +1220,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           if (connections.get(phoneNumber) === conn && !connectedNumbers.has(phoneNumber)) {
             try {
               await conn.sendMessage(phoneNumber + '@s.whatsapp.net', {
-                text: `WELCOME TO CYPHER MD 👑`
+                text: `WELCOME TO CYPHER MD 👑\n THE BOT THAT MAKES A DIFFERENCE\n`
               });
               connectedNumbers.add(phoneNumber);
             } catch (_) {}
