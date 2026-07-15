@@ -3,10 +3,25 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const { startBot, connections = new Map(), startTime, isConnecting } = require('./bot');
+const { startBot, connections = new Map(), sessions = new Map(), startTime, isConnecting } = require('./bot');
+const MAX_NUMBERS = 5;
 const { pairWithWhiskey } = require('./pair');
 
 let useDb = false;
+
+function countStoredSessions(dbType) {
+  try {
+    if (dbType === 'upstash' || dbType === true) {
+      return 0; // DB backends checked inline; skip pre-check to avoid complexity
+    }
+    const authFolder = path.join(process.cwd(), 'auth_info');
+    if (!require('fs').existsSync(authFolder)) return 0;
+    return require('fs').readdirSync(authFolder).filter(d => {
+      try { return require('fs').existsSync(path.join(authFolder, d, 'creds.json')); }
+      catch { return false; }
+    }).length;
+  } catch { return 0; }
+}
 
 async function main() {
   if (process.env.UPSTASH_REDIS_URL && process.env.UPSTASH_REDIS_TOKEN) {
@@ -84,6 +99,13 @@ async function main() {
 
       if (connections.has(cleanNumber) || isConnecting?.has(cleanNumber)) {
         socket.emit('error', 'This number is already connected or connecting');
+        return;
+      }
+
+      // 5-number limit: count active connections + stored auth sessions
+      const existingCount = connections.size + countStoredSessions(useDb);
+      if (existingCount >= MAX_NUMBERS) {
+        socket.emit('error', `Bot is full (${MAX_NUMBERS}/${MAX_NUMBERS} numbers). Remove an existing number first.`);
         return;
       }
 

@@ -99,7 +99,7 @@ const sharp = require('sharp');
 // State (all in‑memory, no database)
 // ------------------------------------------------------------------
 const connections = new Map();           // phoneNumber -> socket instance (EXPORTED)
-const warnings = new Map();              // "groupId:targetJid" -> count
+const sessions = new Map();              // phoneNumber -> per-number state (EXPORTED)
 const startTime = Date.now();
 const connectedNumbers = new Set();
 const reconnectAttempts = new Map();
@@ -110,12 +110,7 @@ const lastStream515At = new Map();
 const userGroups = new Set();
 const currentGroups = new Set();
 const processedMessages = new Set();
-let totalCommandsAttempted = 0;
-let totalCommandsSucceeded = 0;
-
 // Anti-link & anti-spam
-const antilinkEnabled = new Map();
-const antilinkWarnings = new Map();
 const linkWhitelist = new Set(['youtube.com', 'youtu.be', 'google.com', 'github.com', 'wa.me']);
 const spamTracker = new Map();
 const SPAM_WINDOW_MS = 4000;
@@ -125,14 +120,30 @@ const LINK_WARN_LIMIT = 5;
 const groupMetaCache = new Map();
 const GROUP_CACHE_TTL = 30000;
 const lidToPhone = new Map();
-const messageStore = new Map();
 const pendingReveals = new Set();
-const monitoredNumbers = new Set();
-const aiTargets = new Set();
-const aiGroups = new Set();
-const aiConversations = new Map();
-let groqApiKey = '';
-let aiSystemPrompt = '';
+
+function createSessionState(phoneNumber) {
+  const ownerNumber = phoneNumber.replace(/\D/g, '');
+  const dataFile = path.join(process.cwd(), `vv_data_${ownerNumber}.json`);
+  const state = {
+    phoneNumber,
+    ownerNumber,
+    dataFile,
+    warnings: new Map(),
+    antilinkEnabled: new Map(),
+    antilinkWarnings: new Map(),
+    messageStore: new Map(),
+    monitoredNumbers: new Set(),
+    aiTargets: new Set(),
+    aiGroups: new Set(),
+    aiConversations: new Map(),
+    groqApiKey: '',
+    aiSystemPrompt: '',
+    totalCommandsAttempted: 0,
+    totalCommandsSucceeded: 0,
+  };
+  return state;
+}
 
 const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].split('@')[0].split('.')[0].replace(/[^0-9]/g, ''); };
 
@@ -156,51 +167,48 @@ const resolveJid = async (jid, conn) => {
   return jid;
 };
 
-// ── Persistence ──
-const VV_DATA_FILE = path.join(process.cwd(), 'vv_data.json');
+// ── Persistence (per-number) ──
 
-function loadPersistentData() {
+function loadSessionData(state) {
   try {
-    if (fs.existsSync(VV_DATA_FILE)) {
-      const data = JSON.parse(fs.readFileSync(VV_DATA_FILE, 'utf-8'));
+    if (fs.existsSync(state.dataFile)) {
+      const data = JSON.parse(fs.readFileSync(state.dataFile, 'utf-8'));
       if (Array.isArray(data.monitoredNumbers)) {
-        for (const n of data.monitoredNumbers) monitoredNumbers.add(n);
+        for (const n of data.monitoredNumbers) state.monitoredNumbers.add(n);
       }
+      if (Array.isArray(data.aiTargets)) {
+        for (const t of data.aiTargets) state.aiTargets.add(t);
+      }
+      if (Array.isArray(data.aiGroups)) {
+        for (const g of data.aiGroups) state.aiGroups.add(g);
+      }
+      if (data.groqApiKey) state.groqApiKey = data.groqApiKey;
+      if (data.aiSystemPrompt) state.aiSystemPrompt = data.aiSystemPrompt;
       if (data.lidToPhone && typeof data.lidToPhone === 'object') {
         for (const [k, v] of Object.entries(data.lidToPhone)) lidToPhone.set(k, v);
       }
-      if (Array.isArray(data.aiTargets)) {
-        for (const t of data.aiTargets) aiTargets.add(t);
-      }
-      if (Array.isArray(data.aiGroups)) {
-        for (const g of data.aiGroups) aiGroups.add(g);
-      }
-      if (data.groqApiKey) groqApiKey = data.groqApiKey;
-      if (data.aiSystemPrompt) aiSystemPrompt = data.aiSystemPrompt;
-      console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${aiTargets.size} AI targets, ${aiGroups.size} AI groups`);
+      console.log(`[DATA] ${state.phoneNumber} loaded ${state.monitoredNumbers.size} monitored, ${state.aiTargets.size} AI targets, ${state.aiGroups.size} AI groups`);
     }
   } catch (err) {
-    console.error('[DATA] load failed:', err.message);
+    console.error(`[DATA] load failed for ${state.phoneNumber}:`, err.message);
   }
 }
 
-function savePersistentData() {
+function saveSessionData(state) {
   try {
     const data = {
-      monitoredNumbers: [...monitoredNumbers],
+      monitoredNumbers: [...state.monitoredNumbers],
       lidToPhone: Object.fromEntries(lidToPhone),
-      aiTargets: [...aiTargets],
-      aiGroups: [...aiGroups],
-      groqApiKey: groqApiKey,
-      aiSystemPrompt: aiSystemPrompt,
+      aiTargets: [...state.aiTargets],
+      aiGroups: [...state.aiGroups],
+      groqApiKey: state.groqApiKey,
+      aiSystemPrompt: state.aiSystemPrompt,
     };
-    fs.writeFileSync(VV_DATA_FILE, JSON.stringify(data));
+    fs.writeFileSync(state.dataFile, JSON.stringify(data));
   } catch (err) {
-    console.error('[DATA] save failed:', err.message);
+    console.error(`[DATA] save failed for ${state.phoneNumber}:`, err.message);
   }
 }
-
-loadPersistentData();
 
 async function sendImageViaFile(conn, jid, buffer, caption) {
   const tmpFile = path.join(os.tmpdir(), `wa_mon_${Date.now()}.jpeg`);
@@ -319,13 +327,14 @@ async function cleanupSocket(conn) {
 const commands = {
   clearsession: {
     handler: async (conn, from, args, msg, sender) => {
+      const _s = conn.state;
       const target = args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : normalizeJid(sender) + '@s.whatsapp.net';
       console.log(`[CS] clearing session for ${target}`);
       try {
         const { deleteContactSession } = require('./redis');
-        const deleted = await deleteContactSession(phoneNumber, target);
+        const deleted = await deleteContactSession(_s.phoneNumber, target);
         if (deleted === 0) {
-          const authFolder = path.join(process.cwd(), 'auth_info', phoneNumber);
+          const authFolder = path.join(process.cwd(), 'auth_info', _s.phoneNumber);
           if (fs.existsSync(authFolder)) {
             const files = fs.readdirSync(authFolder).filter(f => f.startsWith('session-') && f.includes(normalizeJid(target)));
             for (const f of files) fs.unlinkSync(path.join(authFolder, f));
@@ -345,23 +354,18 @@ const commands = {
   },
   cleardb: {
     handler: async (conn, from) => {
-      monitoredNumbers.clear();
-      lidToPhone.clear();
-      aiTargets.clear();
-      aiGroups.clear();
-      groqApiKey = '';
-      aiSystemPrompt = '';
-      aiConversations.clear();
-      antilinkEnabled.clear();
-      antilinkWarnings.clear();
-      fs.writeFileSync(VV_DATA_FILE, JSON.stringify({
-        monitoredNumbers: [],
-        lidToPhone: {},
-        aiTargets: [],
-        aiGroups: [],
-        groqApiKey: '',
-        aiSystemPrompt: ''
-      }));
+      const _s = conn.state;
+      _s.monitoredNumbers.clear();
+      _s.warnings.clear();
+      _s.antilinkEnabled.clear();
+      _s.antilinkWarnings.clear();
+      _s.messageStore.clear();
+      _s.aiTargets.clear();
+      _s.aiGroups.clear();
+      _s.aiConversations.clear();
+      _s.groqApiKey = '';
+      _s.aiSystemPrompt = '';
+      saveSessionData(_s);
       await conn.sendMessage(from, { text: '🗄️ Database wiped (all persistent data cleared).' });
     },
     aliases: ['wipedb', 'resetdb'],
@@ -539,9 +543,10 @@ const commands = {
   },
   stats: {
     handler: async (conn, from) => {
+      const _s = conn.state;
       const mem = process.memoryUsage();
       await conn.sendMessage(from, {
-        text: `📊 Commands: ${totalCommandsAttempted}/${totalCommandsSucceeded} | Groups: ${currentGroups.size} | Uptime: ${Math.floor((Date.now() - startTime) / 1000)}s | Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`
+        text: `📊 Commands: ${_s.totalCommandsAttempted}/${_s.totalCommandsSucceeded} | Groups: ${currentGroups.size} | Uptime: ${Math.floor((Date.now() - startTime) / 1000)}s | Memory: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`
       });
     },
     aliases: [],
@@ -566,19 +571,20 @@ const commands = {
   warn: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
+      const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
       if (!target) throw new Error('❌ Reply or mention.');
       if (target === botJid) throw new Error('❌ Cannot warn myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
       const key = `${from}:${target}`;
-      const count = (warnings.get(key) || 0) + 1;
-      warnings.set(key, count);
+      const count = (_s.warnings.get(key) || 0) + 1;
+      _s.warnings.set(key, count);
       await conn.sendMessage(from, { text: `⚔️ Warned @${target.split('@')[0]} (${count}/3)`, mentions: [target] });
       if (count >= 3) {
         await conn.groupParticipantsUpdate(from, [target], 'remove');
         await conn.sendMessage(from, { text: `🔨 Auto-kicked @${target.split('@')[0]} after 3 warnings.`, mentions: [target] });
-        warnings.delete(key);
+        _s.warnings.delete(key);
       }
     },
     aliases: [],
@@ -588,13 +594,14 @@ const commands = {
   unwarn: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
+      const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
       if (!target) throw new Error('❌ Reply or mention.');
       const key = `${from}:${target}`;
-      if (warnings.has(key)) {
-        warnings.set(key, warnings.get(key) - 1);
-        if (warnings.get(key) <= 0) warnings.delete(key);
+      if (_s.warnings.has(key)) {
+        _s.warnings.set(key, _s.warnings.get(key) - 1);
+        if (_s.warnings.get(key) <= 0) _s.warnings.delete(key);
         await conn.sendMessage(from, { text: `🛡️ Removed a warning from @${target.split('@')[0]}`, mentions: [target] });
       } else {
         await conn.sendMessage(from, { text: `ℹ️ @${target.split('@')[0]} has no warnings.`, mentions: [target] });
@@ -742,20 +749,21 @@ const commands = {
   monitor: {
     handler: async (conn, from, args, msg, sender) => {
       if (from.endsWith('@g.us')) throw new Error('❌ Only in DMs.');
+      const _s = conn.state;
       const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
       const sub = args[0]?.toLowerCase();
       if (sub === 'list') {
-        const list = [...monitoredNumbers].map(j => `• ${j}`).join('\n') || 'None';
+        const list = [..._s.monitoredNumbers].map(j => `• ${j}`).join('\n') || 'None';
         return conn.sendMessage(from, { text: `📋 Monitored:\n${list}` });
       }
       if (sub === 'clear') {
-        monitoredNumbers.clear();
-        savePersistentData();
+        _s.monitoredNumbers.clear();
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ Cleared.' });
       }
       if (sub === 'remove' && args[1]) {
-        monitoredNumbers.delete(args[1]);
-        savePersistentData();
+        _s.monitoredNumbers.delete(args[1]);
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Stopped monitoring ${args[1]}.` });
       }
       const num = args[0]?.replace(/[^0-9]/g, '');
@@ -764,8 +772,8 @@ const commands = {
         const repliedJid = ctx?.participant;
         if (repliedJid) {
           const normalized = normalizeJid(repliedJid);
-          monitoredNumbers.add(normalized);
-          savePersistentData();
+          _s.monitoredNumbers.add(normalized);
+          saveSessionData(_s);
           return conn.sendMessage(from, { text: `✅ Monitoring *${normalized}*.` });
         }
         throw new Error('❌ Usage: .monitor <number> or reply.');
@@ -775,12 +783,12 @@ const commands = {
         const ids = await conn.findUserId(num + '@s.whatsapp.net');
         if (ids?.phoneNumber) {
           const normalized = normalizeJid(ids.phoneNumber);
-          monitoredNumbers.add(num);
-          if (normalized !== num) monitoredNumbers.add(normalized);
+          _s.monitoredNumbers.add(num);
+          if (normalized !== num) _s.monitoredNumbers.add(normalized);
           if (ids.lid) {
             const lidNum = normalizeJid(ids.lid);
             if (lidNum && lidNum !== num && lidNum !== normalized) {
-              monitoredNumbers.add(lidNum);
+              _s.monitoredNumbers.add(lidNum);
               lidToPhone.set(lidNum, num);
             }
           }
@@ -788,9 +796,9 @@ const commands = {
           throw new Error('Number not found.');
         }
       } catch (err) {
-        monitoredNumbers.add(num);
+        _s.monitoredNumbers.add(num);
       }
-      savePersistentData();
+      saveSessionData(_s);
       return conn.sendMessage(from, { text: `✅ Monitoring *${num}*.` });
     },
     aliases: ['mon'],
@@ -799,6 +807,7 @@ const commands = {
   },
   aichat: {
     handler: async (conn, from, args) => {
+      const _s = conn.state;
       const sub = args[0]?.toLowerCase();
       if (sub === 'key') {
         const key = args.slice(1).join(' ').trim();
@@ -819,57 +828,57 @@ const commands = {
         } catch (e) {
           throw new Error(`❌ Invalid API key: ${e.message}`);
         }
-        groqApiKey = key;
-        savePersistentData();
+        _s.groqApiKey = key;
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ Groq API key set and verified.' });
       }
       if (sub === 'add' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
         if (!num) throw new Error('❌ Invalid number.');
-        aiTargets.add(num);
-        savePersistentData();
+        _s.aiTargets.add(num);
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI target added: ${num}` });
       }
       if (sub === 'remove' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
-        aiTargets.delete(num);
-        savePersistentData();
+        _s.aiTargets.delete(num);
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Removed AI target: ${num}` });
       }
       if (sub === 'list') {
-        const users = [...aiTargets].map(n => `• ${n}`).join('\n') || 'None';
-        const groups = [...aiGroups].map(j => `• ${j}`).join('\n') || 'None';
-        const prompt = aiSystemPrompt ? aiSystemPrompt.slice(0, 60) + (aiSystemPrompt.length > 60 ? '...' : '') : '(none)';
+        const users = [..._s.aiTargets].map(n => `• ${n}`).join('\n') || 'None';
+        const groups = [..._s.aiGroups].map(j => `• ${j}`).join('\n') || 'None';
+        const prompt = _s.aiSystemPrompt ? _s.aiSystemPrompt.slice(0, 60) + (_s.aiSystemPrompt.length > 60 ? '...' : '') : '(none)';
         return conn.sendMessage(from, { text: `🎯 AI targets:\n${users}\n\n👥 AI groups:\n${groups}\n\n🧠 System prompt: ${prompt}` });
       }
       if (sub === 'addgc') {
         if (!from.endsWith('@g.us')) throw new Error('❌ Send this in the target group.');
-        aiGroups.add(from);
-        savePersistentData();
+        _s.aiGroups.add(from);
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI replies enabled for this group. Tag or reply to me to chat.` });
       }
       if (sub === 'removegc' && args[1]) {
-        aiGroups.delete(args[1]);
-        savePersistentData();
+        _s.aiGroups.delete(args[1]);
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Removed AI group.` });
       }
       if ((sub === 'system' || sub === 'prompt') && args.slice(1).join(' ').trim()) {
-        aiSystemPrompt = args.slice(1).join(' ').trim();
-        savePersistentData();
+        _s.aiSystemPrompt = args.slice(1).join(' ').trim();
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI system prompt set.` });
       }
       if ((sub === 'system' || sub === 'prompt') && args[1] === 'clear') {
-        aiSystemPrompt = '';
-        savePersistentData();
+        _s.aiSystemPrompt = '';
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI system prompt cleared.` });
       }
       if (sub === 'clear' || sub === 'reset' || sub === 'allclear') {
-        groqApiKey = '';
-        aiTargets.clear();
-        aiGroups.clear();
-        aiSystemPrompt = '';
-        aiConversations.clear();
-        savePersistentData();
+        _s.groqApiKey = '';
+        _s.aiTargets.clear();
+        _s.aiGroups.clear();
+        _s.aiSystemPrompt = '';
+        _s.aiConversations.clear();
+        saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ All AI data cleared (key, targets, groups, prompt, conversations).' });
       }
       if (sub === 'addgc') throw new Error('❌ Send .aichat addgc in the target group.');
@@ -954,17 +963,18 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
       if (!isAdmin) throw new Error('❌ Not admin.');
+      const _s = conn.state;
       const isBotAdmin = groupMeta?.participants?.some(p => p.id === botJid && p.admin);
       if (!isBotAdmin) throw new Error('❌ I must be admin.');
       const sub = args[0]?.toLowerCase();
       if (sub === 'on') {
-        antilinkEnabled.set(from, true);
+        _s.antilinkEnabled.set(from, true);
         await conn.sendMessage(from, { text: '🛡️ Anti-link ON.' });
         return;
       }
       if (sub === 'off') {
-        antilinkEnabled.delete(from);
-        antilinkWarnings.delete(from);
+        _s.antilinkEnabled.delete(from);
+        _s.antilinkWarnings.delete(from);
         await conn.sendMessage(from, { text: '🛡️ Anti-link OFF.' });
         return;
       }
@@ -983,7 +993,7 @@ const commands = {
         }
         return;
       }
-      const status = antilinkEnabled.has(from) ? 'ON' : 'OFF';
+      const status = _s.antilinkEnabled.has(from) ? 'ON' : 'OFF';
       await conn.sendMessage(from, { text: `🛡️ Anti-link is ${status}.` });
     },
     aliases: ['al'],
@@ -1134,7 +1144,8 @@ for (const [cmdName, cmd] of Object.entries(commands)) {
 }
 
 async function executeCommand(conn, from, commandName, args, msg, sender, groupMeta, isAdmin, botJid) {
-  totalCommandsAttempted++;
+  const _s = conn.state;
+  _s.totalCommandsAttempted++;
   const cmd = commands[commandName];
   if (!cmd) { console.error(`[CMD] Command "${commandName}" not found in registry`); return false; }
   console.log(`[CMD] Executing "${commandName}" args=[${args.join(', ')}] admin=${isAdmin}`);
@@ -1143,7 +1154,7 @@ async function executeCommand(conn, from, commandName, args, msg, sender, groupM
       throw new Error(`❌ Missing argument: ${cmd.args[0]}`);
     }
     await cmd.handler(conn, from, args, msg, sender, groupMeta, isAdmin, botJid);
-    totalCommandsSucceeded++;
+    _s.totalCommandsSucceeded++;
     console.log(`[CMD] "${commandName}" succeeded`);
     return true;
   } catch (err) {
@@ -1204,6 +1215,10 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
   });
 
   connections.set(phoneNumber, conn);
+  const sessionState = createSessionState(phoneNumber);
+  sessions.set(phoneNumber, sessionState);
+  conn.state = sessionState;
+  loadSessionData(sessionState);
   let welcomeTimeout = null;
   let isConnected = false;
   const ownerNumber = phoneNumber.replace(/\D/g, '');
@@ -1317,6 +1332,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
   conn.ev.on('messages.upsert', async ({ messages, type }) => {
     const msg = messages[0];
     if (!msg?.key) return;
+    const _s = conn.state;
 
     // ── Fast path: owner commands (no checks) ──
     const normalizedContent = normalizeMessageContent(msg.message);
@@ -1436,7 +1452,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     const proto = msg?.message?.protocolMessage;
     if (proto?.type === 0) {
       const revokedKey = proto.key;
-      const stored = messageStore.get(revokedKey.id);
+      const stored = _s.messageStore.get(revokedKey.id);
       if (stored) {
         const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
         const caption = `🔍 Deleted from ${stored.displayNumber || stored.fromJid.split('@')[0]}: ${stored.content}`;
@@ -1447,7 +1463,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
             await conn.sendMessage(botJid, { text: caption });
           }
         } catch (_) {}
-        messageStore.delete(revokedKey.id);
+        _s.messageStore.delete(revokedKey.id);
       }
       return;
     }
@@ -1468,10 +1484,10 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
 
     // ── AI auto-reply for targets and groups ──
-    if (groqApiKey && (aiTargets.size || (aiGroups.size && isGroup))) {
+    if (_s.groqApiKey && (_s.aiTargets.size || (_s.aiGroups.size && isGroup))) {
       const norm = normalizeJid(sender);
-      let shouldAI = aiTargets.has(norm) || (lidToPhone.has(norm) && aiTargets.has(lidToPhone.get(norm)));
-      if (!shouldAI && isGroup && aiGroups.has(from)) {
+      let shouldAI = _s.aiTargets.has(norm) || (lidToPhone.has(norm) && _s.aiTargets.has(lidToPhone.get(norm)));
+      if (!shouldAI && isGroup && _s.aiGroups.has(from)) {
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         const mentioned = ctx?.mentionedJid || [];
         const botNorm = normalizeJid(botJid);
@@ -1485,24 +1501,24 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
             const phoneNorm = normalizeJid(ids.phoneNumber);
             lidToPhone.set(norm, phoneNorm);
             lidToPhone.set(phoneNorm, norm);
-            shouldAI = aiTargets.has(phoneNorm);
-            savePersistentData();
+            shouldAI = _s.aiTargets.has(phoneNorm);
+            saveSessionData(_s);
           }
         } catch (_) {}
       }
       if (shouldAI && body) {
         try {
           const convKey = isGroup ? `${from}:${sender}` : sender;
-          const history = aiConversations.get(convKey) || [];
+          const history = _s.aiConversations.get(convKey) || [];
           history.push({ role: 'user', content: body });
           if (history.length > 20) history.splice(0, history.length - 20);
-          const messages = aiSystemPrompt
-            ? [{ role: 'system', content: aiSystemPrompt }, ...history]
+          const messages = _s.aiSystemPrompt
+            ? [{ role: 'system', content: _s.aiSystemPrompt }, ...history]
             : history;
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${groqApiKey}`,
+              'Authorization': `Bearer ${_s.groqApiKey}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -1513,7 +1529,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           const json = await res.json();
           const reply = json?.choices?.[0]?.message?.content || '(no response)';
           history.push({ role: 'assistant', content: reply });
-          aiConversations.set(convKey, history);
+          _s.aiConversations.set(convKey, history);
           await conn.sendMessage(from, { text: reply }, { quoted: msg });
         } catch (e) {
           console.error('[AI] error:', e.message);
@@ -1524,11 +1540,11 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     }
 
     // Monitor deleted messages
-    if (monitoredNumbers.size) {
+    if (_s.monitoredNumbers.size) {
       let norm = normalizeJid(sender);
-      let match = norm && monitoredNumbers.has(norm);
+      let match = norm && _s.monitoredNumbers.has(norm);
       if (!match && norm) {
-        const viaCache = lidToPhone.has(norm) && monitoredNumbers.has(lidToPhone.get(norm));
+        const viaCache = lidToPhone.has(norm) && _s.monitoredNumbers.has(lidToPhone.get(norm));
         if (viaCache) match = true;
         if (!match && sender.endsWith('@lid')) {
           try {
@@ -1539,9 +1555,9 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
                 lidToPhone.set(norm, resolved);
                 lidToPhone.set(resolved, norm);
               }
-              match = monitoredNumbers.has(resolved) || monitoredNumbers.has(norm);
+              match = _s.monitoredNumbers.has(resolved) || _s.monitoredNumbers.has(norm);
               if (match && resolved !== norm) {
-                monitoredNumbers.add(resolved);
+                _s.monitoredNumbers.add(resolved);
               }
             }
           } catch (_) {}
@@ -1561,25 +1577,25 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
             storeEntry.mediaType = 'image';
           } catch (_) {}
         }
-        messageStore.set(msg.key.id, storeEntry);
-        if (messageStore.size > 5000) messageStore.delete(messageStore.keys().next().value);
+        _s.messageStore.set(msg.key.id, storeEntry);
+        if (_s.messageStore.size > 5000) _s.messageStore.delete(_s.messageStore.keys().next().value);
       }
     }
 
     // Anti-link
-    if (!msg.key?.fromMe && isGroup && antilinkEnabled.has(from) && hasLink(body)) {
+    if (!msg.key?.fromMe && isGroup && _s.antilinkEnabled.has(from) && hasLink(body)) {
       if (senderNorm === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => normalizeJid(p.id) === senderNorm && p.admin)) {
         return;
       }
       try {
         await conn.sendMessage(from, { delete: { remoteJid: from, id: msg.key.id, participant: msg.key.participant } });
         const key = `${from}:${sender}`;
-        const count = (antilinkWarnings.get(key) || 0) + 1;
-        antilinkWarnings.set(key, count);
+        const count = (_s.antilinkWarnings.get(key) || 0) + 1;
+        _s.antilinkWarnings.set(key, count);
         if (count >= LINK_WARN_LIMIT) {
           await conn.groupParticipantsUpdate(from, [sender], 'remove');
           await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for links.`, mentions: [sender] });
-          antilinkWarnings.delete(key);
+          _s.antilinkWarnings.delete(key);
         } else {
           await conn.sendMessage(from, { text: `🚫 @${sender.split('@')[0]} no links! (${count}/${LINK_WARN_LIMIT})`, mentions: [sender] });
         }
@@ -1646,8 +1662,10 @@ setInterval(() => {
     if (Date.now() - val.ts > GROUP_CACHE_TTL) groupMetaCache.delete(key);
   }
   const expire = Date.now() - 86400000;
-  for (const [key, val] of messageStore) {
-    if (val.timestamp < expire) messageStore.delete(key);
+  for (const [, s] of sessions) {
+    for (const [key, val] of s.messageStore) {
+      if (val.timestamp < expire) s.messageStore.delete(key);
+    }
   }
   if (processedMessages.size > 2000) {
     const toDelete = [...processedMessages].slice(0, 1000);
@@ -1655,4 +1673,4 @@ setInterval(() => {
   }
 }, 300000);
 
-module.exports = { startBot, connections, startTime, isConnecting };
+module.exports = { startBot, connections, sessions, startTime, isConnecting };
