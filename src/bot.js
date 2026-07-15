@@ -838,8 +838,17 @@ const commands = {
         savePersistentData();
         return conn.sendMessage(from, { text: `✅ AI system prompt cleared.` });
       }
+      if (sub === 'clear' || sub === 'reset' || sub === 'allclear') {
+        groqApiKey = '';
+        aiTargets.clear();
+        aiGroups.clear();
+        aiSystemPrompt = '';
+        aiConversations.clear();
+        savePersistentData();
+        return conn.sendMessage(from, { text: '✅ All AI data cleared (key, targets, groups, prompt, conversations).' });
+      }
       if (sub === 'addgc') throw new Error('❌ Send .aichat addgc in the target group.');
-      throw new Error('❌ Usage: .aichat key <groq_key> | add <num> | remove <num> | list | addgc | removegc <jid> | system <prompt>');
+      throw new Error('❌ Usage: .aichat key <groq_key> | add <num> | remove <num> | list | addgc | removegc <jid> | system <prompt> | clear');
     },
     aliases: ['ai'],
     args: ['optional'],
