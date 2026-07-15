@@ -594,6 +594,48 @@ const commands = {
     args: ['@user'],
     groupAdminRequired: true,
   },
+  promote: {
+    handler: async (conn, from, args, msg, sender, groupMeta, isAdmin) => {
+      if (!isAdmin) throw new Error('❌ Not admin.');
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) {
+        target = ctx.mentionedJid[0];  // @mention
+      }
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';  // raw number
+      }
+      if (!target) throw new Error('❌ Reply, mention, or provide a number.');
+      if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
+      await conn.groupParticipantsUpdate(from, [target], 'promote');
+      await conn.sendMessage(from, { text: `⬆️ Promoted @${target.split('@')[0]}`, mentions: [target] });
+    },
+    aliases: ['admin'],
+    args: ['@user | number'],
+    groupAdminRequired: true,
+  },
+  demote: {
+    handler: async (conn, from, args, msg, sender, groupMeta, isAdmin) => {
+      if (!isAdmin) throw new Error('❌ Not admin.');
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) {
+        target = ctx.mentionedJid[0];  // @mention
+      }
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';  // raw number
+      }
+      if (!target) throw new Error('❌ Reply, mention, or provide a number.');
+      if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
+      await conn.groupParticipantsUpdate(from, [target], 'demote');
+      await conn.sendMessage(from, { text: `⬇️ Demoted @${target.split('@')[0]}`, mentions: [target] });
+    },
+    aliases: [],
+    args: ['@user | number'],
+    groupAdminRequired: true,
+  },
   delete: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
@@ -874,8 +916,9 @@ const commands = {
     groupAdminRequired: false,
   },
   antilink: {
-    handler: async (conn, from, args, msg, sender, groupMeta, isBotAdmin) => {
+    handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
+      const isBotAdmin = groupMeta?.participants?.some(p => p.id === botJid && p.admin);
       if (!isBotAdmin) throw new Error('❌ I must be admin.');
       const sub = args[0]?.toLowerCase();
       if (sub === 'on') {
@@ -1256,18 +1299,20 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           if (isGroup) addGroupIfNew(from);
           const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
           let groupMeta = null;
+          let isUserAdmin = false;
           let isBotAdmin = false;
           if (isGroup && commands[cmdName]?.groupAdminRequired) {
             try {
               groupMeta = await getGroupMeta(conn, from);
               isBotAdmin = groupMeta.participants.some(p => p.id === botJid && p.admin);
+              isUserAdmin = groupMeta.participants.some(p => p.id === sender && p.admin);
             } catch (err) {
               console.error(`[CMD] Permission check failed:`, err.message);
               await conn.sendMessage(from, { text: '❌ Could not verify permissions.' });
               return;
             }
           }
-          await executeCommand(conn, from, cmdName, args, msg, sender, groupMeta, isBotAdmin, botJid);
+          await executeCommand(conn, from, cmdName, args, msg, sender, groupMeta, isUserAdmin, botJid);
           return;
         }
         console.log(`[CMD] Unknown command "${rawCmd}"`);
