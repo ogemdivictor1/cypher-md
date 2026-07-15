@@ -908,8 +908,9 @@ const commands = {
       const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
       const participants = meta.participants.filter(p => p.id !== botJid);
       const allJids = participants.map(p => p.id);
-      const text = args.join(' ') || 'Hey everyone!';
-      await conn.sendMessage(from, { text: `SORRY BUT MY USER ASKED  CYPHER MD TO  MENTION EVERYONE 👀🤷‍♂️\n\n${text}`, mentions: allJids });
+      const text = args.join(' ');
+      const msgText = text ? `\n\n${text}` : '';
+      await conn.sendMessage(from, { text: `👥 *CYPHER MD* is calling everyone!${msgText}`, mentions: allJids });
     },
     aliases: ['tag', 'everyone'],
     args: ['message (optional)'],
@@ -918,6 +919,7 @@ const commands = {
   antilink: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
+      if (!isAdmin) throw new Error('❌ Not admin.');
       const isBotAdmin = groupMeta?.participants?.some(p => p.id === botJid && p.admin);
       if (!isBotAdmin) throw new Error('❌ I must be admin.');
       const sub = args[0]?.toLowerCase();
@@ -1305,7 +1307,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
             try {
               groupMeta = await getGroupMeta(conn, from);
               isBotAdmin = groupMeta.participants.some(p => p.id === botJid && p.admin);
-              isUserAdmin = groupMeta.participants.some(p => p.id === sender && p.admin);
+              isUserAdmin = groupMeta.participants.some(p => normalizeJid(p.id) === senderNorm && p.admin);
             } catch (err) {
               console.error(`[CMD] Permission check failed:`, err.message);
               await conn.sendMessage(from, { text: '❌ Could not verify permissions.' });
@@ -1532,6 +1534,9 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 
     // Anti-link
     if (!msg.key?.fromMe && isGroup && antilinkEnabled.has(from) && hasLink(body)) {
+      if (senderNorm === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => normalizeJid(p.id) === senderNorm && p.admin)) {
+        return;
+      }
       try {
         await conn.sendMessage(from, { delete: { remoteJid: from, id: msg.key.id, participant: msg.key.participant } });
         const key = `${from}:${sender}`;
