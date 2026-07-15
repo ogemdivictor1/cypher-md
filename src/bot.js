@@ -1476,7 +1476,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     const from = msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
     if (isGroup) addGroupIfNew(from);
-    const sender = isGroup ? (msg.key.participant || msg.key.participant || from) : from;
+    const sender = isGroup ? (msg.key.participant || msg.participant || from) : from;
     // JIDS2 removed
     if (type !== 'notify') { return; }
     if (msg.key?.fromMe && !body.startsWith('.')) { return; }
@@ -1584,7 +1584,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 
     // Anti-link
     if (!msg.key?.fromMe && isGroup && _s.antilinkEnabled.has(from) && hasLink(body)) {
-      if (senderNorm === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => normalizeJid(p.id) === senderNorm && p.admin)) {
+      if (normalizeJid(sender) === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => normalizeJid(p.id) === normalizeJid(sender) && p.admin)) {
         return;
       }
       try {
