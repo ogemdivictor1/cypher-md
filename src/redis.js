@@ -55,7 +55,13 @@ async function useUpstashAuthState(phoneNumber) {
 }
 
 async function loadSettings() {
-  const keys = await redis.keys('bot:setting:*');
+  const keys = [];
+  let cursor = 0;
+  do {
+    const [next, batch] = await redis.scan(cursor, { match: 'bot:setting:*', count: 100 });
+    cursor = parseInt(next);
+    keys.push(...batch);
+  } while (cursor !== 0);
   if (!keys.length) return {};
   const values = await redis.mget(...keys);
   const settings = {};
@@ -71,39 +77,40 @@ async function saveSetting(key, value) {
 }
 
 async function deleteAuthSession(phoneNumber) {
-  const pattern = `auth:key:${phoneNumber}:*`;
-  const keys = await redis.keys(pattern);
-  if (keys.length) await redis.del(...keys);
   await redis.del(`auth:creds:${phoneNumber}`);
+  let cursor = 0;
+  do {
+    const [next, keys] = await redis.scan(cursor, { match: `auth:key:${phoneNumber}:*`, count: 100 });
+    cursor = parseInt(next);
+    if (keys.length) await redis.del(...keys);
+  } while (cursor !== 0);
 }
 
 async function deleteContactSession(phoneNumber, targetJid) {
-  const pattern = `auth:key:${phoneNumber}:session:*${targetJid.replace(/[^0-9]/g, '')}*`;
-  const keys = await redis.keys(pattern);
-  const lidPattern = `auth:key:${phoneNumber}:lid-mapping:*${targetJid.replace(/[^0-9]/g, '')}*`;
-  const lidKeys = await redis.keys(lidPattern);
-  const allKeys = [...keys, ...lidKeys];
-  if (allKeys.length) {
-    await redis.del(...allKeys);
-    console.log(`[REDIS] deleted ${allKeys.length} session keys for ${targetJid}`);
-  } else {
-    console.log(`[REDIS] no session keys for ${targetJid}`);
+  const jid = targetJid.replace(/[^0-9]/g, '');
+  let count = 0;
+  for (const pattern of [`auth:key:${phoneNumber}:session:*${jid}*`, `auth:key:${phoneNumber}:lid-mapping:*${jid}*`]) {
+    let cursor = 0;
+    do {
+      const [next, keys] = await redis.scan(cursor, { match: pattern, count: 100 });
+      cursor = parseInt(next);
+      if (keys.length) { await redis.del(...keys); count += keys.length; }
+    } while (cursor !== 0);
   }
-  return allKeys.length;
+  if (count) console.log(`[REDIS] deleted ${count} session keys for ${targetJid}`);
+  else console.log(`[REDIS] no session keys for ${targetJid}`);
+  return count;
 }
 
 async function getStoredPhoneNumbers() {
-  let lastErr;
-  for (let i = 0; i < 3; i++) {
-    try {
-      const keys = await redis.keys('auth:creds:*');
-      return keys.map(k => k.replace('auth:creds:', ''));
-    } catch (err) {
-      lastErr = err;
-      if (i < 2) await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-    }
-  }
-  throw lastErr;
+  const numbers = [];
+  let cursor = 0;
+  do {
+    const [next, keys] = await redis.scan(cursor, { match: 'auth:creds:*', count: 100 });
+    cursor = parseInt(next);
+    for (const k of keys) numbers.push(k.replace('auth:creds:', ''));
+  } while (cursor !== 0);
+  return [...new Set(numbers)];
 }
 
 module.exports = { initRedis, useUpstashAuthState, loadSettings, saveSetting, deleteAuthSession, deleteContactSession, getStoredPhoneNumbers, getRedis: () => redis };
