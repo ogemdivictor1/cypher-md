@@ -849,10 +849,10 @@ const commands = {
       </svg>`;
       try {
         const imgBuf = await sharp(Buffer.from(svg)).png().toBuffer();
-        await conn.sendMessage(target, { image: imgBuf, viewOnceV2: true });
+        await conn.sendMessage(target, { image: imgBuf, viewOnceV2Extension: true });
       } catch (err) {
         console.error('[GHOST] image render failed, falling back:', err.message);
-        await conn.sendMessage(target, { text, viewOnceV2: true });
+        await conn.sendMessage(target, { text, viewOnceV2Extension: true });
       }
     },
     aliases: [],
