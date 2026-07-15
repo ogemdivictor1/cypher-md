@@ -128,6 +128,9 @@ const lidToPhone = new Map();
 const messageStore = new Map();
 const pendingReveals = new Set();
 const monitoredNumbers = new Set();
+const aiTargets = new Set();
+const aiConversations = new Map();
+let geminiApiKey = '';
 
 const normalizeJid = (jid) => { if (!jid) return ''; return jid.split(':')[0].replace(/[^0-9]/g, ''); };
 
@@ -164,7 +167,11 @@ function loadPersistentData() {
       if (data.lidToPhone && typeof data.lidToPhone === 'object') {
         for (const [k, v] of Object.entries(data.lidToPhone)) lidToPhone.set(k, v);
       }
-      console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${lidToPhone.size} LID mappings`);
+      if (Array.isArray(data.aiTargets)) {
+        for (const t of data.aiTargets) aiTargets.add(t);
+      }
+      if (data.geminiApiKey) geminiApiKey = data.geminiApiKey;
+      console.log(`[DATA] loaded ${monitoredNumbers.size} monitored, ${aiTargets.size} AI targets`);
     }
   } catch (err) {
     console.error('[DATA] load failed:', err.message);
@@ -176,6 +183,8 @@ function savePersistentData() {
     const data = {
       monitoredNumbers: [...monitoredNumbers],
       lidToPhone: Object.fromEntries(lidToPhone),
+      aiTargets: [...aiTargets],
+      geminiApiKey: geminiApiKey,
     };
     fs.writeFileSync(VV_DATA_FILE, JSON.stringify(data));
   } catch (err) {
@@ -713,6 +722,38 @@ const commands = {
     args: ['<number> | list | remove <number> | clear'],
     groupAdminRequired: false,
   },
+  aichat: {
+    handler: async (conn, from, args) => {
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'key') {
+        geminiApiKey = args.slice(1).join(' ').trim();
+        if (!geminiApiKey) throw new Error('❌ Usage: .aichat key <your_gemini_api_key>');
+        savePersistentData();
+        return conn.sendMessage(from, { text: '✅ Gemini API key set.' });
+      }
+      if (sub === 'add' && args[1]) {
+        const num = args[1].replace(/[^0-9]/g, '');
+        if (!num) throw new Error('❌ Invalid number.');
+        aiTargets.add(num);
+        savePersistentData();
+        return conn.sendMessage(from, { text: `✅ AI target added: ${num}` });
+      }
+      if (sub === 'remove' && args[1]) {
+        const num = args[1].replace(/[^0-9]/g, '');
+        aiTargets.delete(num);
+        savePersistentData();
+        return conn.sendMessage(from, { text: `✅ Removed AI target: ${num}` });
+      }
+      if (sub === 'list') {
+        const list = [...aiTargets].map(n => `• ${n}`).join('\n') || 'None';
+        return conn.sendMessage(from, { text: `🎯 AI targets:\n${list}` });
+      }
+      throw new Error('❌ Usage: .aichat key <key> | add <num> | remove <num> | list');
+    },
+    aliases: ['ai'],
+    args: ['optional'],
+    groupAdminRequired: false,
+  },
   id: {
     handler: async (conn, from, args, msg, sender) => {
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
@@ -919,7 +960,7 @@ const commands = {
   menu: {
     handler: async (conn, from) => {
       const menuText = `*📋 CYPHER MD Commands*\n\n` +
-        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🛡️ .antilink / .al\n📢 .tagall / .tag\n👁️ .monitor / .mon <number>\n📸 .vv (reply to view-once)\n❓ ??? (reply to VV → DM)\n🆔 .id / .jid\n\n*Admin:*\n.kick .warn .unwarn .ban .delete .mute .unmute .antilink on|off\n\n_Send .help for a detailed guide_`;
+        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🤖 .aichat / .ai <key|add|remove|list>\n🛡️ .antilink / .al\n📢 .tagall / .tag\n👁️ .monitor / .mon <number>\n📸 .vv (reply to view-once)\n❓ ??? (reply to VV → DM)\n👻 .ghost [number] <text>\n🆔 .id / .jid\n\n*Admin:*\n.kick .warn .unwarn .ban .delete .mute .unmute .antilink on|off\n\n_Send .help for a detailed guide_`;
       await conn.sendMessage(from, { text: menuText });
     },
     aliases: ['m'],
@@ -1262,6 +1303,35 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
     if (msg.key?.fromMe && !body.startsWith('.')) { return; }
 
     const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
+
+    // ── AI auto-reply for targets ──
+    if (geminiApiKey && aiTargets.size) {
+      const norm = normalizeJid(sender);
+      if (aiTargets.has(norm) || (lidToPhone.has(norm) && aiTargets.has(lidToPhone.get(norm)))) {
+        if (body) {
+          try {
+            const convKey = sender;
+            const history = aiConversations.get(convKey) || [];
+            history.push({ role: 'user', parts: [{ text: body }] });
+            if (history.length > 20) history.splice(0, history.length - 20);
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: history })
+            });
+            const json = await res.json();
+            const reply = json?.candidates?.[0]?.content?.parts?.[0]?.text || '(no response)';
+            history.push({ role: 'model', parts: [{ text: reply }] });
+            aiConversations.set(convKey, history);
+            await conn.sendMessage(from, { text: reply }, { quoted: msg });
+          } catch (e) {
+            console.error('[AI] error:', e.message);
+            await conn.sendMessage(from, { text: '⚠️ AI error: ' + e.message }, { quoted: msg });
+          }
+        }
+        return;
+      }
+    }
 
     // Monitor deleted messages
     if (monitoredNumbers.size) {
