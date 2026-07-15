@@ -723,6 +723,18 @@ const commands = {
     args: [],
     groupAdminRequired: false,
   },
+  ghost: {
+    handler: async (conn, from, args, msg) => {
+      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      let text = args.join(' ');
+      if (!text && ctx?.stanzaId) text = '👻';
+      if (!text) throw new Error('❌ Usage: .ghost <text> or reply to a message.');
+      await conn.sendMessage(from, { text, viewOnce: true });
+    },
+    aliases: [],
+    args: ['optional'],
+    groupAdminRequired: false,
+  },
   tagall: {
     handler: async (conn, from, args, msg, sender, groupMeta) => {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
