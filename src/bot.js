@@ -433,7 +433,7 @@ const commands = {
       }
     },
     aliases: [],
-    args: ['@user (optional)'],
+    args: ['optional'],
     groupAdminRequired: false,
   },
   sticker: {
