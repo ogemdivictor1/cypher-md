@@ -395,7 +395,7 @@ const commands = {
         try { await conn.sendMessage(target, { text: '🧪 Step 4 test (after session refresh)' }); console.log('[PING] step4 OK'); } catch (e) { console.log('[PING] step4 FAIL', e.message); }
         return;
       }
-      await conn.sendMessage(from, { text: '🏓 Pong! CYPHER MD is alive!' });
+      await conn.sendMessage(from, { text: '🏓 Pong! CYPHER MD is still active!' });
     },
     aliases: ['p'],
     args: [],
@@ -522,7 +522,7 @@ const commands = {
       }
       const buffer = await downloadMediaMessage(targetMsg, 'buffer', { logger: conn.logger });
       const png = await sharp(buffer).png().toBuffer();
-      await conn.sendMessage(from, { image: png, caption: '🖼️ Here is your image!' });
+      await conn.sendMessage(from, { image: png, caption: '🖼️ I CYPHER MD has safely delivered your image!' });
     },
     aliases: ['ti'],
     args: [],
@@ -739,7 +739,7 @@ const commands = {
           }
         }
       } catch (err) {
-        throw new Error('Failed to reveal view-once message.');
+        throw new Error('Failed to reveal view-once message 😭😭');
       }
     },
     aliases: [],
@@ -1439,8 +1439,8 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
               || msg.message?.viewOnceMessage?.message
               || msg.message?.viewOnceMessageV2Extension?.message;
             const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
-            if (buffer && inner?.imageMessage) await conn.sendMessage(ownerJid, { image: buffer, caption: '👁️ VV revealed' });
-            else if (buffer && inner?.videoMessage) await conn.sendMessage(ownerJid, { video: buffer, caption: '👁️ VV revealed' });
+            if (buffer && inner?.imageMessage) await conn.sendMessage(ownerJid, { image: buffer, caption: '👀👀 you asked for this view once' });
+            else if (buffer && inner?.videoMessage) await conn.sendMessage(ownerJid, { video: buffer, caption: '👀👀 you asked for this view once' });
             else if (buffer && inner?.audioMessage) await conn.sendMessage(ownerJid, { audio: buffer, mimetype: 'audio/ogg' });
           } catch (_) {}
         }
