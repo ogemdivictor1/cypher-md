@@ -188,6 +188,12 @@ function loadSessionData(state) {
       if (data.lidToPhone && typeof data.lidToPhone === 'object') {
         for (const [k, v] of Object.entries(data.lidToPhone)) lidToPhone.set(k, v);
       }
+      if (Array.isArray(data.antilinkEnabled)) {
+        for (const jid of data.antilinkEnabled) state.antilinkEnabled.set(jid, true);
+      }
+      if (data.antilinkWarnings && typeof data.antilinkWarnings === 'object') {
+        for (const [k, v] of Object.entries(data.antilinkWarnings)) state.antilinkWarnings.set(k, v);
+      }
       console.log(`[DATA] ${state.phoneNumber} loaded ${state.monitoredNumbers.size} monitored, ${state.aiTargets.size} AI targets, ${state.aiGroups.size} AI groups`);
     }
   } catch (err) {
@@ -204,6 +210,8 @@ function saveSessionData(state) {
       aiGroups: [...state.aiGroups],
       groqApiKey: state.groqApiKey,
       aiSystemPrompt: state.aiSystemPrompt,
+      antilinkEnabled: [...state.antilinkEnabled.keys()],
+      antilinkWarnings: Object.fromEntries(state.antilinkWarnings),
     };
     fs.writeFileSync(state.dataFile, JSON.stringify(data));
   } catch (err) {
@@ -1638,12 +1646,12 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           await conn.sendMessage(botJid, { text: `⚠️ Blocked spammer: ${sender.split('@')[0]}` });
         } else {
           const spamKey = `${from}:${sender}:spam`;
-          const count = (antilinkWarnings.get(spamKey) || 0) + 1;
-          antilinkWarnings.set(spamKey, count);
+          const count = (_s.antilinkWarnings.get(spamKey) || 0) + 1;
+          _s.antilinkWarnings.set(spamKey, count);
           if (count >= LINK_WARN_LIMIT) {
             await conn.groupParticipantsUpdate(from, [sender], 'remove');
             await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for spamming.`, mentions: [sender] });
-            antilinkWarnings.delete(spamKey);
+            _s.antilinkWarnings.delete(spamKey);
           } else {
             await conn.sendMessage(from, { text: `🐢 @${sender.split('@')[0]} slow down!`, mentions: [sender] });
           }
