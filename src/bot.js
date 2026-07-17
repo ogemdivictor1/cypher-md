@@ -1496,34 +1496,57 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 
     // ── MonitorVV: auto-capture view-once from watched numbers ──
     if (!msg.key?.fromMe && _s.monitorVVNumbers.size) {
-      const vvMsg = msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension;
-      if (vvMsg) {
-        const fromV = msg.key.remoteJid;
-        const senderV = fromV.endsWith('@g.us') ? (msg.key.participant || msg.participant || fromV) : fromV;
-        const normV = normalizeJid(senderV);
-        let match = _s.monitorVVNumbers.has(normV);
-        if (!match) {
-          const viaCache = lidToPhone.has(normV) && _s.monitorVVNumbers.has(lidToPhone.get(normV));
-          if (viaCache) match = true;
-        }
-        if (match) {
-          const owner = ownerNumber + '@s.whatsapp.net';
-          console.log(`[MVV] auto-capturing VV from ${normV}`);
+      const fromV = msg.key.remoteJid;
+      const isGroupV = fromV.endsWith('@g.us');
+      const senderV = isGroupV ? (msg.key.participant || msg.participant || fromV) : fromV;
+      const normV = normalizeJid(senderV);
+      let match = _s.monitorVVNumbers.has(normV);
+      if (!match) {
+        const viaCache = lidToPhone.has(normV) && _s.monitorVVNumbers.has(lidToPhone.get(normV));
+        if (viaCache) match = true;
+      }
+      if (match) {
+        const owner = ownerNumber + '@s.whatsapp.net';
+        const hasVV = !!(msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension);
+        const isStub = !hasVV && msg.key?.isViewOnce;
+        if (hasVV) {
+          // VV arrived with Stanza 1 content → download + forward
+          console.log(`[MVV] capturing VV from ${normV}`);
           try {
             await conn.rvo(msg, owner);
             console.log('[MVV] rvo OK');
-          } catch (rvoErr) {
-            console.log('[MVV] rvo failed, direct download fallback', rvoErr.message);
+          } catch (e) {
+            console.log('[MVV] rvo failed, trying direct download', e.message);
             try {
-              const inner = vvMsg?.message;
-              const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
+              const inner = msg.message?.viewOnceMessageV2?.message
+                || msg.message?.viewOnceMessage?.message
+                || msg.message?.viewOnceMessageV2Extension?.message;
+              const buffer = await downloadMediaMessage(msg, 'buffer', {}, {
+                logger: pino({ level: 'silent' }),
+                reuploadRequest: conn.updateMediaMessage
+              });
               if (buffer && inner?.imageMessage) await conn.sendMessage(owner, { image: buffer, caption: '👁️ VV auto-captured' });
               else if (buffer && inner?.videoMessage) await conn.sendMessage(owner, { video: buffer, caption: '👁️ VV auto-captured' });
               else if (buffer && inner?.audioMessage) await conn.sendMessage(owner, { audio: buffer, mimetype: 'audio/ogg' });
-            } catch (dlErr) {
-              console.log('[MVV] download failed (stub?)', dlErr.message);
+            } catch (e2) {
+              console.log('[MVV] download failed', e2.message);
             }
           }
+        } else if (isStub && !isGroupV && msg.key.id) {
+          // VV stub in DM → use "?" trick to trigger re-send
+          console.log(`[MVV] VV stub from ${normV}, sending "?" for re-send`);
+          try {
+            await conn.sendMessage(fromV, { text: '?' }, {
+              quoted: { key: msg.key, message: { conversation: '' } }
+            });
+            pendingReveals.add(msg.key.id);
+            console.log('[MVV] "?" sent, waiting for re-send');
+          } catch (e) {
+            console.log('[MVV] "?" failed', e.message);
+          }
+        } else if (isStub && isGroupV) {
+          // VV stub in group → can't use "?" stealthily, skip
+          console.log(`[MVV] VV stub from ${normV} in group, skipping (would reveal monitoring)`);
         }
       }
     }
