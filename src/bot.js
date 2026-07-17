@@ -133,6 +133,8 @@ function createSessionState(phoneNumber) {
     warnings: new Map(),
     antilinkEnabled: new Map(),
     antilinkWarnings: new Map(),
+    antistatusEnabled: new Map(),
+    antistatusCounts: new Map(),
     messageStore: new Map(),
     monitoredNumbers: new Set(),
     aiTargets: new Set(),
@@ -194,6 +196,12 @@ function loadSessionData(state) {
       if (data.antilinkWarnings && typeof data.antilinkWarnings === 'object') {
         for (const [k, v] of Object.entries(data.antilinkWarnings)) state.antilinkWarnings.set(k, v);
       }
+      if (Array.isArray(data.antistatusEnabled)) {
+        for (const jid of data.antistatusEnabled) state.antistatusEnabled.set(jid, true);
+      }
+      if (data.antistatusCounts && typeof data.antistatusCounts === 'object') {
+        for (const [k, v] of Object.entries(data.antistatusCounts)) state.antistatusCounts.set(k, v);
+      }
       console.log(`[DATA] ${state.phoneNumber} loaded ${state.monitoredNumbers.size} monitored, ${state.aiTargets.size} AI targets, ${state.aiGroups.size} AI groups`);
     }
   } catch (err) {
@@ -212,6 +220,8 @@ function saveSessionData(state) {
       aiSystemPrompt: state.aiSystemPrompt,
       antilinkEnabled: [...state.antilinkEnabled.keys()],
       antilinkWarnings: Object.fromEntries(state.antilinkWarnings),
+      antistatusEnabled: [...state.antistatusEnabled.keys()],
+      antistatusCounts: Object.fromEntries(state.antistatusCounts),
     };
     fs.writeFileSync(state.dataFile, JSON.stringify(data));
   } catch (err) {
@@ -1014,6 +1024,45 @@ const commands = {
     args: ['on|off|whitelist'],
     groupAdminRequired: true,
   },
+  antistatus: {
+    handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
+      if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
+      if (!isAdmin) throw new Error('❌ Not admin.');
+      const _s = conn.state;
+      const meta = groupMeta || await getGroupMeta(conn, from);
+      const participants = meta.participants.filter(p => !areJidsSameUser(p.id, botJid) && !p.admin);
+      const allJids = participants.map(p => p.id);
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'on') {
+        _s.antistatusEnabled.set(from, true);
+        await conn.sendMessage(from, {
+          text: `🚫 *ANTI-STATUS ACTIVATED*\n\n` +
+            `From now on, each member may tag this group in their status only 3 times per day.\n` +
+            `On the 3rd violation, the member will be automatically removed from the group.\n` +
+            `\n*Rules:*\n` +
+            `• Tagging this group in your status counts as 1 violation.\n` +
+            `• After 3 violations in one day → you are kicked.\n` +
+            `• The counter resets daily.\n\n` +
+            `Be responsible. 🙏`,
+          mentions: allJids
+        });
+        saveSessionData(_s);
+        return;
+      }
+      if (sub === 'off') {
+        _s.antistatusEnabled.delete(from);
+        _s.antistatusCounts.clear();
+        await conn.sendMessage(from, { text: '🚫 Anti-status OFF.' });
+        saveSessionData(_s);
+        return;
+      }
+      const status = _s.antistatusEnabled.has(from) ? 'ON' : 'OFF';
+      await conn.sendMessage(from, { text: `🚫 Anti-status is ${status}.` });
+    },
+    aliases: ['as'],
+    args: ['on|off'],
+    groupAdminRequired: true,
+  },
   help: {
     handler: async (conn, from) => {
       const helpText = `🤖 *Welcome to CYPHER MD* 🤖\n\n` +
@@ -1091,6 +1140,8 @@ const commands = {
         `• *.antilink on|off* — Toggle anti-link protection. When on, I'll delete messages ` +
         `containing links and warn the sender. 3 warnings = auto-kick. '.antilink' toggles ` +
         `for the current group only.\n` +
+        `• *.antistatus on|off* — Toggle anti-status protection. Members who tag this group ` +
+        `in their WhatsApp status get 3 warnings per day; on the 3rd they are auto-kicked.\n` +
         `• *.tagall* / *.tag* — Mention all group members in a message. Use with a message ` +
         `to broadcast an announcement.\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -1141,7 +1192,7 @@ const commands = {
         `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🧹 .clearsession\n🧪 .testimg\n🆔 .id / .jid\n\n` +
         `🤖 *AI & MEDIA*\n👻 .ghost [num] <text>\n📸 .vv (reply to VV)\n❓ ??? (reply to VV → DM)\n👁️ .monitor / .mon <number>\n\n` +
         `🤖 *AI CHAT*\n.aichat key <groq_key>\n.aichat add <num>\n.aichat remove <num>\n.aichat list\n.aichat system <prompt>\n.aichat addgc (in group)\n\n` +
-        `🛡️ *GROUP (Admin)*\n.kick .warn .unwarn .ban .delete .mute .unmute\n.antilink on|off .tagall / .tag\n\n` +
+        `🛡️ *GROUP (Admin)*\n.kick .warn .unwarn .ban .delete .mute .unmute\n.antilink on|off .antistatus on|off .tagall / .tag\n\n` +
         `_Send .help for a detailed guide_`;
       await conn.sendMessage(from, { text: menuText });
     },
@@ -1635,6 +1686,26 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           await conn.sendMessage(from, { text: `🚫 @${sender.split('@')[0]} no links! (${count}/${LINK_WARN_LIMIT})`, mentions: [sender] });
         }
       } catch (_) {}
+      return;
+    }
+
+    // Anti-status
+    if (isGroup && _s.antistatusEnabled.has(from) && msg.message?.groupStatusMentionMessage) {
+      const today = new Date().toISOString().slice(0, 10);
+      const statKey = `${from}:${sender}:${today}`;
+      const count = (_s.antistatusCounts.get(statKey) || 0) + 1;
+      _s.antistatusCounts.set(statKey, count);
+      if (count >= 3) {
+        try {
+          await conn.groupParticipantsUpdate(from, [sender], 'remove');
+          await conn.sendMessage(from, { text: `🔨 @${sender.split('@')[0]} kicked for tagging the group in status 3 times today.`, mentions: [sender] });
+        } catch (_) {}
+        _s.antistatusCounts.delete(statKey);
+      } else {
+        const left = 3 - count;
+        await conn.sendMessage(from, { text: `🚫 @${sender.split('@')[0]} do not tag this group in your status! (${count}/3) — ${left} ${left === 1 ? 'mention' : 'mentions'} left today.`, mentions: [sender] });
+      }
+      saveSessionData(_s);
       return;
     }
 
