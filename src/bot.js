@@ -84,7 +84,8 @@ const {
   fetchLatestWaWebVersion,
   downloadMediaMessage,
   generateWAMessage,
-  normalizeMessageContent
+  normalizeMessageContent,
+  areJidsSameUser
 } = require('@lordmega/baileys');
 
 const { Boom } = require('@hapi/boom');
@@ -964,7 +965,12 @@ const commands = {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
-      const isBotAdmin = groupMeta?.participants?.some(p => normalizeJid(p.id) === normalizeJid(botJid) && p.admin);
+      const isBotAdmin = groupMeta?.participants?.some(p => {
+        if (!p.admin) return false;
+        const botPn = conn.user?.id || '';
+        const botLid = conn.user?.lid || null;
+        return areJidsSameUser(p.id, botPn) || (botLid && areJidsSameUser(p.id, botLid));
+      });
       if (!isBotAdmin) throw new Error('❌ I must be admin.');
       const sub = args[0]?.toLowerCase();
       if (sub === 'on') {
@@ -1340,15 +1346,21 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         const cmdName = aliasMap.get(rawCmd);
         if (cmdName) {
           if (isGroup) addGroupIfNew(from);
-          const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
+          const botJid = conn.user?.id || conn.user?.lid || '';
           let groupMeta = null;
           let isUserAdmin = false;
           let isBotAdmin = false;
           if (isGroup && commands[cmdName]?.groupAdminRequired) {
             try {
               groupMeta = await getGroupMeta(conn, from);
-              isBotAdmin = groupMeta.participants.some(p => normalizeJid(p.id) === normalizeJid(botJid) && p.admin);
-              isUserAdmin = groupMeta.participants.some(p => normalizeJid(p.id) === senderNorm && p.admin);
+              const botPn = conn.user?.id || '';
+              const botLid = conn.user?.lid || null;
+              const checkAdmin = (p) => {
+                if (!p.admin) return false;
+                return areJidsSameUser(p.id, botPn) || (botLid && areJidsSameUser(p.id, botLid));
+              };
+              isBotAdmin = groupMeta.participants.some(checkAdmin);
+              isUserAdmin = isBotAdmin;
             } catch (err) {
               console.error(`[CMD] Permission check failed:`, err.message);
               await conn.sendMessage(from, { text: '❌ Could not verify permissions.' });
@@ -1599,7 +1611,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 
     // Anti-link
     if (!msg.key?.fromMe && isGroup && _s.antilinkEnabled.has(from) && hasLink(body)) {
-      if (normalizeJid(sender) === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => normalizeJid(p.id) === normalizeJid(sender) && p.admin)) {
+      if (normalizeJid(sender) === ownerNumber || groupMetaCache.get(from)?.metadata?.participants?.some(p => p.admin && areJidsSameUser(p.id, sender))) {
         return;
       }
       try {
