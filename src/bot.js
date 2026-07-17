@@ -1254,18 +1254,9 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         reconnectAttempts.delete(phoneNumber);
         return;
       }
-      const shouldDelete = reason === 408 || reason === 503;
-      if (shouldDelete) {
-        console.log(`[CONN] ${phoneNumber} ${reason} — purging session`);
-        await deleteAuthFolder(phoneNumber);
-        if (useDb === 'upstash') {
-          const { deleteAuthSession } = require('./redis');
-          await deleteAuthSession(phoneNumber).catch(() => {});
-        } else if (useDb) {
-          const { deleteAuthSession } = require('./db');
-          await deleteAuthSession(phoneNumber).catch(() => {});
-        }
-        reconnectAttempts.delete(phoneNumber);
+      if (reason === 408 || reason === 503) {
+        console.log(`[CONN] ${phoneNumber} ${reason} — transient stream error, reconnecting`);
+        // Do not purge the session — 408/503 are temporary network issues
       }
       if (reason === 515) lastStream515At.set(phoneNumber, Date.now());
       if (reason === DisconnectReason.loggedOut) {
