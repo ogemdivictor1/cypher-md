@@ -202,6 +202,9 @@ function loadSessionData(state) {
       if (data.antistatusCounts && typeof data.antistatusCounts === 'object') {
         for (const [k, v] of Object.entries(data.antistatusCounts)) state.antistatusCounts.set(k, v);
       }
+      if (data.warnings && typeof data.warnings === 'object') {
+        for (const [k, v] of Object.entries(data.warnings)) state.warnings.set(k, v);
+      }
       console.log(`[DATA] ${state.phoneNumber} loaded ${state.monitoredNumbers.size} monitored, ${state.aiTargets.size} AI targets, ${state.aiGroups.size} AI groups`);
     }
   } catch (err) {
@@ -222,6 +225,7 @@ function saveSessionData(state) {
       antilinkWarnings: Object.fromEntries(state.antilinkWarnings),
       antistatusEnabled: [...state.antistatusEnabled.keys()],
       antistatusCounts: Object.fromEntries(state.antistatusCounts),
+      warnings: Object.fromEntries(state.warnings),
     };
     fs.writeFileSync(state.dataFile, JSON.stringify(data));
   } catch (err) {
