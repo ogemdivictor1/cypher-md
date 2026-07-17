@@ -38,7 +38,39 @@
 
 ---
 
-## `key.isViewOnce` on linked-device Stanza 1 VV media
+# Bot Features
+
+## Anti-Status (`.antistatus on|off`)
+
+**Detection**: Checks `msg.message?.groupStatusMentionMessage` on the **raw** (pre-normalization) message object. When a group member tags the group in their WhatsApp status, the server sends a `groupStatusMentionMessage` with `msg.key.participant` = the uploader's JID.
+
+**Enforcement**: Tracks `<group>:<sender>:<date>` counts. 3 strikes per day = auto-kick. Warning is a tag+mention with remaining count. Counter resets daily (date-based key). State is persisted via `saveSessionData`/`loadSessionData`.
+
+**Files**: `src/bot.js` — state props `antistatusEnabled` (Map), `antistatusCounts` (Map); command handler at line 1028; detection at line 1693.
+
+---
+
+## Admin check uses `areJidsSameUser` + LID
+
+**Problem**: Group metadata can identify participants by LID (`@lid`) or phone JID (`@s.whatsapp.net`) with different digit strings. Old `normalizeJid` comparison only checked phone JID.
+
+**Fix**: Use Baileys' `areJidsSameUser()` and compare against **both** `conn.user?.id` (phone JID) and `conn.user?.lid` (LID). Applied in all 3 admin check sites: permission block (line 1358), antilink handler (line 968), and antilink enforcement bypass (line 1614).
+
+---
+
+## Anti-link / Anti-status state persistence
+
+**Problem**: `antilinkEnabled`, `antilinkWarnings`, `antistatusEnabled`, `antistatusCounts` were in-memory only — lost on every reconnect/restart.
+
+**Fix**: Added load/save in `loadSessionData` and `saveSessionData`.
+
+---
+
+## Anti-spam variable reference bug
+
+**Problem**: Line 1641 used `antilinkWarnings` (without `_s.` prefix) instead of `_s.antilinkWarnings`, throwing a silent `ReferenceError`.
+
+**Fix**: Changed to `_s.antilinkWarnings`.
 
 **File**: `node_modules/@lordmega/baileys/lib/Utils/decode-wa-message.js`
 
