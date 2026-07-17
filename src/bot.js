@@ -382,6 +382,8 @@ const commands = {
       _s.warnings.clear();
       _s.antilinkEnabled.clear();
       _s.antilinkWarnings.clear();
+      _s.antistatusEnabled.clear();
+      _s.antistatusCounts.clear();
       _s.messageStore.clear();
       _s.aiTargets.clear();
       _s.aiGroups.clear();
@@ -1764,6 +1766,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
 // Cache cleanup
 setInterval(() => {
   const cutoff = Date.now() - 60000;
+  const todayStr = new Date().toISOString().slice(0, 10);
   for (const [key, val] of spamTracker) {
     const recent = val.filter(t => t > cutoff);
     if (recent.length) spamTracker.set(key, recent); else spamTracker.delete(key);
@@ -1775,6 +1778,10 @@ setInterval(() => {
   for (const [, s] of sessions) {
     for (const [key, val] of s.messageStore) {
       if (val.timestamp < expire) s.messageStore.delete(key);
+    }
+    for (const [key] of s.antistatusCounts) {
+      const date = key.split(':').pop();
+      if (date < todayStr) s.antistatusCounts.delete(key);
     }
   }
   if (processedMessages.size > 2000) {
