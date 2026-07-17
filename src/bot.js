@@ -581,7 +581,7 @@ const commands = {
       if (target === botJid) throw new Error('❌ Cannot kick myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
       await conn.groupParticipantsUpdate(from, [target], 'remove');
-      await conn.sendMessage(from, { text: `👢 Kicked @${target.split('@')[0]}`, mentions: [target] });
+      await conn.sendMessage(from, { text: `👢 Kicked @${target.split('@')[0]} OTILO!`, mentions: [target] });
     },
     aliases: [],
     args: ['@user'],
@@ -602,7 +602,7 @@ const commands = {
       await conn.sendMessage(from, { text: `⚔️ Warned @${target.split('@')[0]} (${count}/3)`, mentions: [target] });
       if (count >= 3) {
         await conn.groupParticipantsUpdate(from, [target], 'remove');
-        await conn.sendMessage(from, { text: `🔨 Auto-kicked @${target.split('@')[0]} after 3 warnings.`, mentions: [target] });
+        await conn.sendMessage(from, { text: `🔨 Auto-kicked @${target.split('@')[0]} after 3 warnings OTILO!`, mentions: [target] });
         _s.warnings.delete(key);
       }
     },
@@ -639,7 +639,7 @@ const commands = {
       if (target === botJid) throw new Error('❌ Cannot ban myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
       await conn.groupParticipantsUpdate(from, [target], 'remove');
-      await conn.sendMessage(from, { text: `🔨 Banned @${target.split('@')[0]}`, mentions: [target] });
+      await conn.sendMessage(from, { text: `🔨 Banned @${target.split('@')[0]} OTILO!`, mentions: [target] });
     },
     aliases: [],
     args: ['@user'],
@@ -1680,7 +1680,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         _s.antilinkWarnings.set(key, count);
         if (count >= LINK_WARN_LIMIT) {
           await conn.groupParticipantsUpdate(from, [sender], 'remove');
-          await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for links.`, mentions: [sender] });
+          await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for links OTILO!`, mentions: [sender] });
           _s.antilinkWarnings.delete(key);
         } else {
           await conn.sendMessage(from, { text: `🚫 @${sender.split('@')[0]} no links! (${count}/${LINK_WARN_LIMIT})`, mentions: [sender] });
@@ -1698,7 +1698,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       if (count >= 3) {
         try {
           await conn.groupParticipantsUpdate(from, [sender], 'remove');
-          await conn.sendMessage(from, { text: `🔨 @${sender.split('@')[0]} kicked for tagging the group in status 3 times today.`, mentions: [sender] });
+          await conn.sendMessage(from, { text: `🔨 @${sender.split('@')[0]} kicked for tagging the group in status 3 times today OTILO!`, mentions: [sender] });
         } catch (_) {}
         _s.antistatusCounts.delete(statKey);
       } else {
@@ -1721,7 +1721,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           _s.antilinkWarnings.set(spamKey, count);
           if (count >= LINK_WARN_LIMIT) {
             await conn.groupParticipantsUpdate(from, [sender], 'remove');
-            await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for spamming.`, mentions: [sender] });
+            await conn.sendMessage(from, { text: `🔨 Kicked @${sender.split('@')[0]} for spamming OTILO!`, mentions: [sender] });
             _s.antilinkWarnings.delete(spamKey);
           } else {
             await conn.sendMessage(from, { text: `🐢 @${sender.split('@')[0]} slow down!`, mentions: [sender] });
