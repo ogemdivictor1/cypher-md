@@ -4,24 +4,31 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { startBot, connections = new Map(), sessions = new Map(), startTime, isConnecting } = require('./bot');
-const MAX_NUMBERS = 5;
 const { pairWithWhiskey } = require('./pair');
 
-let useDb = false;
+const ALLOWED_NUMBERS_FILE = path.join(__dirname, '..', 'allowed_numbers.json');
+const MAX_ALLOWED_NUMBERS = 5;
 
-function countStoredSessions(dbType) {
+function loadAllowedNumbers() {
   try {
-    if (dbType === 'upstash' || dbType === true) {
-      return 0; // DB backends checked inline; skip pre-check to avoid complexity
+    if (require('fs').existsSync(ALLOWED_NUMBERS_FILE)) {
+      return JSON.parse(require('fs').readFileSync(ALLOWED_NUMBERS_FILE, 'utf-8'));
     }
-    const authFolder = path.join(process.cwd(), 'auth_info');
-    if (!require('fs').existsSync(authFolder)) return 0;
-    return require('fs').readdirSync(authFolder).filter(d => {
-      try { return require('fs').existsSync(path.join(authFolder, d, 'creds.json')); }
-      catch { return false; }
-    }).length;
-  } catch { return 0; }
+  } catch (e) {
+    console.error('[SRV] Failed to load allowed numbers:', e.message);
+  }
+  return [];
 }
+
+function saveAllowedNumbers(numbers) {
+  try {
+    require('fs').writeFileSync(ALLOWED_NUMBERS_FILE, JSON.stringify(numbers, null, 2));
+  } catch (e) {
+    console.error('[SRV] Failed to save allowed numbers:', e.message);
+  }
+}
+
+let useDb = false;
 
 async function main() {
   if (process.env.UPSTASH_REDIS_URL && process.env.UPSTASH_REDIS_TOKEN) {
@@ -68,6 +75,37 @@ async function main() {
     }
   }
 
+  // Populate allowed numbers from existing stored sessions (e.g. after file deletion)
+  const allowedNumbers = loadAllowedNumbers();
+  if (allowedNumbers.length < MAX_ALLOWED_NUMBERS) {
+    let storedNumbers = [];
+    if (useDb === 'upstash') {
+      try {
+        const { getStoredPhoneNumbers } = require('./redis');
+        storedNumbers = await getStoredPhoneNumbers();
+      } catch (_) {}
+    } else if (useDb) {
+      try {
+        const { getStoredPhoneNumbers } = require('./db');
+        storedNumbers = await getStoredPhoneNumbers();
+      } catch (_) {}
+    } else {
+      const authFolder = path.join(process.cwd(), 'auth_info');
+      try {
+        storedNumbers = require('fs').readdirSync(authFolder).filter(d => {
+          try { return require('fs').existsSync(path.join(authFolder, d, 'creds.json')); }
+          catch { return false; }
+        });
+      } catch (_) {}
+    }
+    for (const num of storedNumbers) {
+      if (!allowedNumbers.includes(num) && allowedNumbers.length < MAX_ALLOWED_NUMBERS) {
+        allowedNumbers.push(num);
+      }
+    }
+    saveAllowedNumbers(allowedNumbers);
+  }
+
   const app = express();
   const server = http.createServer(app);
   const io = new Server(server);
@@ -102,11 +140,15 @@ async function main() {
         return;
       }
 
-      // 5-number limit: count active connections + stored auth sessions
-      const existingCount = connections.size + countStoredSessions(useDb);
-      if (existingCount >= MAX_NUMBERS) {
-        socket.emit('error', `Bot is full (${MAX_NUMBERS}/${MAX_NUMBERS} numbers). Remove an existing number first.`);
-        return;
+      // First-5-numbers rule: only the first 5 unique paired numbers are ever allowed
+      const allowedNumbers = loadAllowedNumbers();
+      if (!allowedNumbers.includes(cleanNumber)) {
+        if (allowedNumbers.length >= MAX_ALLOWED_NUMBERS) {
+          socket.emit('error', `Only the first ${MAX_ALLOWED_NUMBERS} paired numbers are allowed. This number is not on the allowed list.`);
+          return;
+        }
+        allowedNumbers.push(cleanNumber);
+        saveAllowedNumbers(allowedNumbers);
       }
 
       try {
