@@ -134,6 +134,7 @@ function createSessionState(phoneNumber) {
     antilinkWarnings: new Map(),
     messageStore: new Map(),
     monitoredNumbers: new Set(),
+    monitorVVNumbers: new Set(),
     aiTargets: new Set(),
     aiGroups: new Set(),
     aiConversations: new Map(),
@@ -176,6 +177,9 @@ function loadSessionData(state) {
       if (Array.isArray(data.monitoredNumbers)) {
         for (const n of data.monitoredNumbers) state.monitoredNumbers.add(n);
       }
+      if (Array.isArray(data.monitorVVNumbers)) {
+        for (const n of data.monitorVVNumbers) state.monitorVVNumbers.add(n);
+      }
       if (Array.isArray(data.aiTargets)) {
         for (const t of data.aiTargets) state.aiTargets.add(t);
       }
@@ -198,6 +202,7 @@ function saveSessionData(state) {
   try {
     const data = {
       monitoredNumbers: [...state.monitoredNumbers],
+      monitorVVNumbers: [...state.monitorVVNumbers],
       lidToPhone: Object.fromEntries(lidToPhone),
       aiTargets: [...state.aiTargets],
       aiGroups: [...state.aiGroups],
@@ -356,6 +361,7 @@ const commands = {
     handler: async (conn, from) => {
       const _s = conn.state;
       _s.monitoredNumbers.clear();
+      _s.monitorVVNumbers.clear();
       _s.warnings.clear();
       _s.antilinkEnabled.clear();
       _s.antilinkWarnings.clear();
@@ -805,6 +811,45 @@ const commands = {
     args: ['<number> | list | remove <number> | clear'],
     groupAdminRequired: false,
   },
+  monitorvv: {
+    handler: async (conn, from, args, msg, sender) => {
+      if (from.endsWith('@g.us')) throw new Error('❌ Only in DMs.');
+      const _s = conn.state;
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'list') {
+        const list = [..._s.monitorVVNumbers].map(j => `• ${j}`).join('\n') || 'None';
+        return conn.sendMessage(from, { text: `📋 VV-monitored:\n${list}` });
+      }
+      if (sub === 'clear') {
+        _s.monitorVVNumbers.clear();
+        saveSessionData(_s);
+        return conn.sendMessage(from, { text: '✅ Cleared all VV-monitored numbers.' });
+      }
+      if (sub === 'remove' && args[1]) {
+        _s.monitorVVNumbers.delete(args[1]);
+        saveSessionData(_s);
+        return conn.sendMessage(from, { text: `✅ Stopped VV-monitoring ${args[1]}.` });
+      }
+      const num = args[0]?.replace(/[^0-9]/g, '');
+      if (!num) {
+        const ctx = msg.message?.extendedTextMessage?.contextInfo;
+        const repliedJid = ctx?.participant;
+        if (repliedJid) {
+          const normalized = normalizeJid(repliedJid);
+          _s.monitorVVNumbers.add(normalized);
+          saveSessionData(_s);
+          return conn.sendMessage(from, { text: `✅ VV-monitoring *${normalized}*.` });
+        }
+        throw new Error('❌ Usage: .monitorvv <number> or reply.');
+      }
+      _s.monitorVVNumbers.add(num);
+      saveSessionData(_s);
+      return conn.sendMessage(from, { text: `✅ VV-monitoring *${num}*.` });
+    },
+    aliases: ['mvv'],
+    args: ['<number> | list | remove <number> | clear'],
+    groupAdminRequired: false,
+  },
   aichat: {
     handler: async (conn, from, args) => {
       const _s = conn.state;
@@ -1052,6 +1097,16 @@ const commands = {
         `  - *.monitor remove 2348012345678* — stop watching\n` +
         `  - *.monitor clear* — remove all\n  ` +
         `⚠️ Only works in your message yourself interface. Cannot monitor my own number.\n\n` +
+        `• *.monitorvv* / *.mvv <number>*\n  Like .monitor, but specifically for view-once messages. ` +
+        `Add a phone number to the VV watchlist. Whenever that person sends a view-once message ` +
+        `anywhere I can see it, I'll automatically download the content and forward it to you ` +
+        `silently — no need to be present or reply with ???. Works for VVs sent to you in DMs ` +
+        `or in groups. How to use:\n` +
+        `  - *.mvv 2348012345678* — watch a number for VVs\n` +
+        `  - *.mvv list* — show all VV-monitored numbers\n` +
+        `  - *.mvv remove 2348012345678* — stop watching\n` +
+        `  - *.mvv clear* — remove all\n  ` +
+        `⚠️ Only works if the VV arrives with content (most do). For stubs, use ??? manually.\n\n` +
         `• *.vv* (reply to a view-once or recalled message)\n  Reveals a view-once message or a ` +
         `deleted message that was captured by .monitor. Reply to the view-once stub or the ` +
         `[Media] placeholder and I'll extract the content. How it handles the revealed content ` +
@@ -1125,7 +1180,7 @@ const commands = {
     handler: async (conn, from) => {
       const menuText = `*📋 CYPHER MD Commands*\n\n` +
         `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🧹 .clearsession\n🧪 .testimg\n🆔 .id / .jid\n\n` +
-        `🤖 *AI & MEDIA*\n👻 .ghost [num] <text>\n📸 .vv (reply to VV)\n❓ ??? (reply to VV → DM)\n👁️ .monitor / .mon <number>\n\n` +
+        `🤖 *AI & MEDIA*\n👻 .ghost [num] <text>\n📸 .vv (reply to VV)\n❓ ??? (reply to VV → DM)\n👁️ .monitor / .mon <number>\n👁️ .monitorvv / .mvv <number>\n\n` +
         `🤖 *AI CHAT*\n.aichat key <groq_key>\n.aichat add <num>\n.aichat remove <num>\n.aichat list\n.aichat system <prompt>\n.aichat addgc (in group)\n\n` +
         `🛡️ *GROUP (Admin)*\n.kick .warn .unwarn .ban .delete .mute .unmute\n.antilink on|off .tagall / .tag\n\n` +
         `_Send .help for a detailed guide_`;
@@ -1437,6 +1492,40 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
         }
       }
       return;
+    }
+
+    // ── MonitorVV: auto-capture view-once from watched numbers ──
+    if (!msg.key?.fromMe && _s.monitorVVNumbers.size) {
+      const vvMsg = msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2Extension;
+      if (vvMsg) {
+        const fromV = msg.key.remoteJid;
+        const senderV = fromV.endsWith('@g.us') ? (msg.key.participant || msg.participant || fromV) : fromV;
+        const normV = normalizeJid(senderV);
+        let match = _s.monitorVVNumbers.has(normV);
+        if (!match) {
+          const viaCache = lidToPhone.has(normV) && _s.monitorVVNumbers.has(lidToPhone.get(normV));
+          if (viaCache) match = true;
+        }
+        if (match) {
+          const owner = ownerNumber + '@s.whatsapp.net';
+          console.log(`[MVV] auto-capturing VV from ${normV}`);
+          try {
+            await conn.rvo(msg, owner);
+            console.log('[MVV] rvo OK');
+          } catch (rvoErr) {
+            console.log('[MVV] rvo failed, direct download fallback', rvoErr.message);
+            try {
+              const inner = vvMsg?.message;
+              const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
+              if (buffer && inner?.imageMessage) await conn.sendMessage(owner, { image: buffer, caption: '👁️ VV auto-captured' });
+              else if (buffer && inner?.videoMessage) await conn.sendMessage(owner, { video: buffer, caption: '👁️ VV auto-captured' });
+              else if (buffer && inner?.audioMessage) await conn.sendMessage(owner, { audio: buffer, mimetype: 'audio/ogg' });
+            } catch (dlErr) {
+              console.log('[MVV] download failed (stub?)', dlErr.message);
+            }
+          }
+        }
+      }
     }
 
     // Non-owner: protocol messages (delete detection)
