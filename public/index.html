@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CYPHER MD">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+    <link rel="apple-touch-icon" href="/icon.svg">
     <title>CYPHER MD</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
@@ -246,6 +253,35 @@
             status.className = 'status error';
             status.textContent = '❌ ' + msg;
             connectBtn.disabled = false;
+        });
+
+        // ── PWA: register service worker ──
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        // ── PWA: install prompt ──
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const installBtn = document.createElement('button');
+            installBtn.id = 'installBtn';
+            installBtn.textContent = 'INSTALL APP';
+            installBtn.style.marginTop = '16px';
+            installBtn.style.background = '#222';
+            installBtn.style.color = '#ff6600';
+            installBtn.style.border = '1px solid #ff6600';
+            document.querySelector('.container').appendChild(installBtn);
+            installBtn.addEventListener('click', async () => {
+                installBtn.disabled = true;
+                installBtn.textContent = 'INSTALLING...';
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                installBtn.textContent = outcome === 'accepted' ? '✓ INSTALLED' : '✗ DECLINED';
+                setTimeout(() => installBtn.remove(), 2000);
+                deferredPrompt = null;
+            });
         });
     </script>
 </body>
