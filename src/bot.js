@@ -964,7 +964,7 @@ const commands = {
       if (!from.endsWith('@g.us')) throw new Error('❌ Only in groups.');
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
-      const isBotAdmin = groupMeta?.participants?.some(p => p.id === botJid && p.admin);
+      const isBotAdmin = groupMeta?.participants?.some(p => normalizeJid(p.id) === normalizeJid(botJid) && p.admin);
       if (!isBotAdmin) throw new Error('❌ I must be admin.');
       const sub = args[0]?.toLowerCase();
       if (sub === 'on') {
@@ -1347,7 +1347,7 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
           if (isGroup && commands[cmdName]?.groupAdminRequired) {
             try {
               groupMeta = await getGroupMeta(conn, from);
-              isBotAdmin = groupMeta.participants.some(p => p.id === botJid && p.admin);
+              isBotAdmin = groupMeta.participants.some(p => normalizeJid(p.id) === normalizeJid(botJid) && p.admin);
               isUserAdmin = groupMeta.participants.some(p => normalizeJid(p.id) === senderNorm && p.admin);
             } catch (err) {
               console.error(`[CMD] Permission check failed:`, err.message);
