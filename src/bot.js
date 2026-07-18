@@ -78,7 +78,6 @@ process.stderr.write = (chunk) => {
 };
 
 const storage = require('./storage');
-const youtubedl = require('youtube-dl-exec');
 const ytSearch = require('yt-search');
 
 const {
@@ -1211,28 +1210,27 @@ const commands = {
           title = searchResult.videos[0].title;
         }
 
-        await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
+        await conn.sendMessage(from, { text: `⏳ Processing *${title.replace(/\*/g, '')}*...` });
 
-        const tmpFile = path.join(os.tmpdir(), `play_${Date.now()}.mp3`);
+        const cobaltHost = process.env.COBALT_API || 'https://api.cobalt.tools';
 
-        const dlOpts = {
-          extractAudio: true,
-          audioFormat: 'mp3',
-          output: tmpFile,
-          noPlaylist: true,
-          extractorArgs: 'youtube:player_client=android,youtube:player_skip=webpage',
-        };
-        if (process.env.YOUTUBE_COOKIES) dlOpts.cookies = process.env.YOUTUBE_COOKIES;
-        await youtubedl(url, dlOpts);
+        const res = await fetch(`${cobaltHost}/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ url, downloadMode: 'audio', audioFormat: 'mp3' }),
+        });
+        if (!res.ok) throw new Error(`Cobalt API ${res.status}`);
 
-        if (!fs.existsSync(tmpFile)) throw new Error('No audio file was produced');
+        const data = await res.json();
+        if (!data.url) throw new Error('No download URL returned');
 
-        const stats = fs.statSync(tmpFile);
-        if (stats.size === 0) throw new Error('Downloaded file is empty');
+        const audioRes = await fetch(data.url);
+        if (!audioRes.ok) throw new Error(`Download failed ${audioRes.status}`);
 
-        const buffer = fs.readFileSync(tmpFile);
+        const buffer = Buffer.from(await audioRes.arrayBuffer());
+        if (buffer.length === 0) throw new Error('Empty audio');
+
         await conn.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
-        try { fs.unlinkSync(tmpFile); } catch (_) {}
       } catch (err) {
         throw new Error(`❌ Playback failed: ${err.message}`);
       }
