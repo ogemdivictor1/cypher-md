@@ -1215,11 +1215,15 @@ const commands = {
 
         const tmpFile = path.join(os.tmpdir(), `play_${Date.now()}.mp3`);
 
-        await youtubedl(url, {
+        const dlOpts = {
           extractAudio: true,
           audioFormat: 'mp3',
           output: tmpFile,
-        });
+          noPlaylist: true,
+          extractorArgs: 'youtube:player_client=android,youtube:player_skip=webpage',
+        };
+        if (process.env.YOUTUBE_COOKIES) dlOpts.cookies = process.env.YOUTUBE_COOKIES;
+        await youtubedl(url, dlOpts);
 
         if (!fs.existsSync(tmpFile)) throw new Error('No audio file was produced');
 
