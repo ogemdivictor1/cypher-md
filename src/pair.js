@@ -2,8 +2,8 @@ const {
   makeWASocket,
   DisconnectReason,
   Browsers,
-  fetchLatestWaWebVersion
-} = require('@lordmega/baileys');
+  fetchLatestBaileysVersion
+} = require('@whiskeysockets/baileys');
 
 const storage = require('./storage');
 const { Boom } = require('@hapi/boom');
@@ -16,7 +16,7 @@ async function pairWithWhiskey(phoneNumber, socket) {
   // Resolve auth backend
   const { state, saveCreds } = await storage.useAuthState(phoneNumber);
 
-  const { version } = await fetchLatestWaWebVersion();
+  const { version } = await fetchLatestBaileysVersion();
 
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -94,11 +94,13 @@ async function pairWithWhiskey(phoneNumber, socket) {
             if (conn.authState?.creds?.registered) {
               clearInterval(checkInterval);
               checkInterval = null;
-              try { conn.ev.removeAllListeners(); } catch (_) {}
-              try { if (conn.ws) conn.ws.close(); } catch (_) {}
-              try { if (typeof conn.end === 'function') conn.end(); } catch (_) {}
+              // Persist the final creds before closing
+              saveCreds().catch(() => {});
               // Give WhatsApp a moment to settle before handing off
               setTimeout(() => {
+                try { conn.ev.removeAllListeners(); } catch (_) {}
+                try { if (conn.ws) conn.ws.close(); } catch (_) {}
+                try { if (typeof conn.end === 'function') conn.end(); } catch (_) {}
                 if (!resolved) { resolved = true; resolve({ state, saveCreds }); }
               }, 2000);
             }

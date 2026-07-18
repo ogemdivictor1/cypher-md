@@ -78,7 +78,7 @@ process.stderr.write = (chunk) => {
 };
 
 const storage = require('./storage');
-const ytdl = require('@distube/ytdl-core');
+const youtubedl = require('youtube-dl-exec');
 const ytSearch = require('yt-search');
 
 const {
@@ -1203,29 +1203,35 @@ const commands = {
       let url = query;
       let title = query;
 
-      if (!query.startsWith('http')) {
-        const searchResult = await ytSearch(query);
-        if (!searchResult?.videos?.length) throw new Error('❌ No results found');
-        url = searchResult.videos[0].url;
-        title = searchResult.videos[0].title;
+      try {
+        if (!query.startsWith('http')) {
+          const searchResult = await ytSearch(query);
+          if (!searchResult?.videos?.length) throw new Error('❌ No results found');
+          url = searchResult.videos[0].url;
+          title = searchResult.videos[0].title;
+        }
+
+        await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
+
+        const tmpFile = path.join(os.tmpdir(), `play_${Date.now()}.mp3`);
+
+        await youtubedl(url, {
+          extractAudio: true,
+          audioFormat: 'mp3',
+          output: tmpFile,
+        });
+
+        if (!fs.existsSync(tmpFile)) throw new Error('No audio file was produced');
+
+        const stats = fs.statSync(tmpFile);
+        if (stats.size === 0) throw new Error('Downloaded file is empty');
+
+        const buffer = fs.readFileSync(tmpFile);
+        await conn.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+      } catch (err) {
+        throw new Error(`❌ Playback failed: ${err.message}`);
       }
-
-      await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
-
-      const stream = ytdl(url, { filter: 'audioonly', quality: 'highestaudio' });
-      const tmpFile = path.join(os.tmpdir(), `play_${Date.now()}.mp3`);
-      const writeStream = fs.createWriteStream(tmpFile);
-
-      await new Promise((resolve, reject) => {
-        stream.pipe(writeStream);
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-        stream.on('error', reject);
-      });
-
-      const buffer = fs.readFileSync(tmpFile);
-      await conn.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
-      try { fs.unlinkSync(tmpFile); } catch (_) {}
     },
     aliases: ['song', 'yt', 'audio'],
     args: ['<song name or URL>'],
