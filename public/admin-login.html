@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYPHER MD - Admin Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Courier New', monospace; }
+        body {
+            background: #0a0a0a; color: #ff6600; min-height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .container {
+            background: rgba(0,0,0,0.75); border: 1px solid #ff6600;
+            border-radius: 12px; padding: 40px; width: 100%; max-width: 400px;
+            box-shadow: 0 0 30px rgba(255,102,0,0.3);
+        }
+        .logo { font-size: 1.8rem; font-weight: bold; text-align: center; margin-bottom: 30px; letter-spacing: 2px; }
+        input {
+            width: 100%; padding: 12px 16px; background: #111; border: 1px solid #ff6600;
+            border-radius: 8px; color: #ff6600; font-size: 1rem; outline: none; margin-bottom: 16px;
+        }
+        input::placeholder { color: #ff660055; }
+        button {
+            width: 100%; padding: 12px; background: #ff6600; color: #000; border: none;
+            border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; letter-spacing: 2px;
+        }
+        button:hover { background: #ff8833; }
+        .error { color: #ff3333; text-align: center; margin-top: 12px; min-height: 24px; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">ADMIN PANEL</div>
+        <input type="text" id="username" placeholder="Username" autocomplete="username">
+        <input type="password" id="password" placeholder="Password" autocomplete="current-password">
+        <button id="loginBtn">LOGIN</button>
+        <div class="error" id="error"></div>
+    </div>
+    <script>
+        const login = async () => {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('error').textContent = '';
+            try {
+                const res = await fetch('/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                if (res.ok) { window.location.href = '/admin'; return; }
+                const data = await res.json();
+                document.getElementById('error').textContent = data.error || 'Login failed';
+            } catch (e) {
+                document.getElementById('error').textContent = 'Connection error';
+            }
+            document.getElementById('loginBtn').disabled = false;
+        };
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+    </script>
+</body>
+</html>

@@ -13,6 +13,18 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 
 async function pairWithWhiskey(phoneNumber, socket, useDb = false) {
+  // Wipe any stale session first so pairing always starts fresh
+  if (useDb === 'upstash') {
+    const { deleteAuthSession } = require('./redis');
+    await deleteAuthSession(phoneNumber).catch(() => {});
+  } else if (useDb) {
+    const { deleteAuthSession } = require('./db');
+    await deleteAuthSession(phoneNumber).catch(() => {});
+  } else {
+    const folder = path.join(process.cwd(), 'auth_info', phoneNumber);
+    try { fs.rmSync(folder, { recursive: true, force: true }); } catch (_) {}
+  }
+
   // Resolve auth backend
   let state, saveCreds;
   if (useDb === 'upstash') {

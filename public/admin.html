@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYPHER MD - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Courier New', monospace; }
+        body {
+            background: #0a0a0a; color: #ff6600; min-height: 100vh; padding: 20px;
+        }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #ff660033; padding-bottom: 16px; margin-bottom: 24px;
+        }
+        .header h1 { font-size: 1.4rem; letter-spacing: 2px; }
+        .header a { color: #ff6600; text-decoration: none; font-size: 0.85rem; }
+        .header a:hover { text-decoration: underline; }
+        .card {
+            background: rgba(0,0,0,0.75); border: 1px solid #ff6600;
+            border-radius: 8px; padding: 20px; margin-bottom: 16px;
+        }
+        .card h3 { font-size: 0.9rem; margin-bottom: 12px; opacity: 0.7; letter-spacing: 1px; }
+        .number-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 0; border-bottom: 1px solid #ff660022;
+        }
+        .number-row:last-child { border-bottom: none; }
+        .num-info { display: flex; flex-direction: column; gap: 4px; }
+        .num { font-size: 1rem; font-weight: bold; }
+        .status-badge {
+            font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; display: inline-block;
+        }
+        .status-badge.connected { background: #00ff8822; color: #00ff88; border: 1px solid #00ff88; }
+        .status-badge.disconnected { background: #ff333322; color: #ff3333; border: 1px solid #ff3333; }
+        .status-badge.allowed { background: #ff660022; color: #ff6600; border: 1px solid #ff6600; }
+        .actions { display: flex; gap: 8px; align-items: center; }
+        .btn-unpair {
+            padding: 6px 16px; background: #ff3333; color: #fff; border: none;
+            border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+        .btn-unpair:hover { background: #cc0000; }
+        .btn-unpair:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .btn-logout {
+            padding: 6px 16px; background: transparent; color: #ff6600; border: 1px solid #ff6600;
+            border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+        }
+        .btn-logout:hover { background: #ff660022; }
+        .empty {
+            text-align: center; padding: 30px; opacity: 0.6; font-size: 0.9rem;
+        }
+        .toast {
+            display: none; position: fixed; bottom: 20px; right: 20px;
+            background: #111; border: 1px solid #00ff88; color: #00ff88;
+            padding: 12px 20px; border-radius: 8px; font-size: 0.85rem;
+            box-shadow: 0 0 20px rgba(0,255,136,0.2);
+        }
+        .toast.error { border-color: #ff3333; color: #ff3333; }
+        .count { font-size: 0.8rem; opacity: 0.6; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CYPHER MD · ADMIN</h1>
+        <button class="btn-logout" onclick="logout()">LOGOUT</button>
+    </div>
+
+    <div class="card">
+        <h3>CONNECTED NUMBERS</h3>
+        <div class="count" id="connCount"></div>
+        <div id="numbersList"><div class="empty">Loading...</div></div>
+    </div>
+
+    <div class="card">
+        <h3>ALLOWED LIST</h3>
+        <div id="allowedList"><div class="empty">Loading...</div></div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let toastTimer;
+
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.className = 'toast' + (isError ? ' error' : '');
+            t.style.display = 'block';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.style.display = 'none', 4000);
+        }
+
+        async function logout() {
+            await fetch('/admin/logout', { method: 'POST' });
+            window.location.href = '/admin/login';
+        }
+
+        async function unpair(number, btn) {
+            if (!confirm(`Unpair ${number}?`)) return;
+            btn.disabled = true; btn.textContent = '...';
+            try {
+                const res = await fetch(`/admin/api/unpair/${number}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`${number} unpaired`);
+                    loadData();
+                } else {
+                    showToast(data.error || 'Failed', true);
+                    btn.disabled = false; btn.textContent = 'UNPAIR';
+                }
+            } catch (e) {
+                showToast('Network error', true);
+                btn.disabled = false; btn.textContent = 'UNPAIR';
+            }
+        }
+
+        async function loadData() {
+            try {
+                const res = await fetch('/admin/api/numbers');
+                if (res.status === 401) { window.location.href = '/admin/login'; return; }
+                const data = await res.json();
+
+                // Connected numbers
+                const nl = document.getElementById('numbersList');
+                document.getElementById('connCount').textContent = `${data.numbers.length} active`;
+                if (data.numbers.length === 0) {
+                    nl.innerHTML = '<div class="empty">No numbers connected</div>';
+                } else {
+                    nl.innerHTML = data.numbers.map(n => `
+                        <div class="number-row">
+                            <div class="num-info">
+                                <span class="num">${n.number}</span>
+                                <span class="status-badge ${n.connected ? 'connected' : 'disconnected'}">${n.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+                            </div>
+                            <div class="actions">
+                                <button class="btn-unpair" onclick="unpair('${n.number}', this)">UNPAIR</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // Allowed list
+                const al = document.getElementById('allowedList');
+                if (data.allowed.length === 0) {
+                    al.innerHTML = '<div class="empty">No numbers in allowed list</div>';
+                } else {
+                    al.innerHTML = data.allowed.map(n => `
+                        <div class="number-row">
+                            <span class="num">${n}</span>
+                            <span class="status-badge allowed">ALLOWED</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                document.getElementById('numbersList').innerHTML = '<div class="empty">Error loading data</div>';
+            }
+        }
+
+        loadData();
+        setInterval(loadData, 10000);
+    </script>
+</body>
+</html>
