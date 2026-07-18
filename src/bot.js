@@ -1213,13 +1213,18 @@ const commands = {
         await conn.sendMessage(from, { text: `⏳ Processing *${title.replace(/\*/g, '')}*...` });
 
         const cobaltHost = process.env.COBALT_API || 'https://api.cobalt.tools';
+        console.log('[PLAY] URL sent to Cobalt:', url);
 
         const res = await fetch(`${cobaltHost}/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ url, downloadMode: 'audio', audioFormat: 'mp3' }),
         });
-        if (!res.ok) throw new Error(`Cobalt API ${res.status}`);
+        if (!res.ok) {
+          const errBody = await res.text();
+          console.log('[PLAY] Cobalt error:', res.status, errBody);
+          throw new Error(`Cobalt API ${res.status}: ${errBody}`);
+        }
 
         const data = await res.json();
         if (!data.url) throw new Error('No download URL returned');
