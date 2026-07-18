@@ -29,7 +29,7 @@ function saveAllowedNumbers(numbers) {
   }
 }
 
-let useDb = false;
+const storage = require('./storage');
 
 // ─── Admin auth ───
 const ADMIN_USER = 'cypher2dwrld';
@@ -56,85 +56,31 @@ function requireAdmin(req, res, next) {
 }
 
 async function main() {
-  if (process.env.UPSTASH_REDIS_URL && process.env.UPSTASH_REDIS_TOKEN) {
-    const { initRedis } = require('./redis');
-    initRedis(process.env.UPSTASH_REDIS_URL, process.env.UPSTASH_REDIS_TOKEN);
-    console.log('[SRV] Upstash Redis');
-    useDb = 'upstash';
-  } else if (process.env.DATABASE_URL) {
-    const { initDb, setupTables } = require('./db');
-    initDb(process.env.DATABASE_URL);
-    try {
-      await setupTables();
-      console.log('[SRV] DB connected');
-      useDb = true;
-    } catch (err) {
-      console.error('[SRV] DB failed:', err.message);
-    }
-  } else {
-    console.log('[SRV] file-based auth');
-  }
+  await storage.initBackend();
 
   // ─── Auto-restore saved sessions (up to MAX_ALLOWED_NUMBERS) ───
   const preAllowed = loadAllowedNumbers();
   const maxRestore = MAX_ALLOWED_NUMBERS;
-  if (useDb === 'upstash') {
-    const { getStoredPhoneNumbers } = require('./redis');
-    try {
-      const numbers = await getStoredPhoneNumbers();
-      let restored = 0;
-      for (const num of numbers) {
-        if (restored >= maxRestore) break;
-        if (preAllowed.includes(num) || restored < maxRestore) {
-          console.log('[SRV] auto-start', num);
-          startBot(num, null, 'upstash').catch(err => console.error('[SRV] start failed', num, err.message));
-          restored++;
-        }
+  try {
+    const numbers = await storage.getStoredPhoneNumbers();
+    let restored = 0;
+    for (const num of numbers) {
+      if (restored >= maxRestore) break;
+      if (preAllowed.includes(num) || restored < maxRestore) {
+        console.log('[SRV] auto-start', num);
+        startBot(num, null, storage.getType()).catch(err => console.error('[SRV] start failed', num, err.message));
+        restored++;
       }
-    } catch (err) {
-      console.error('[SRV] load sessions failed:', err.message);
     }
-  } else if (useDb) {
-    const { getStoredPhoneNumbers } = require('./db');
-    try {
-      const numbers = await getStoredPhoneNumbers();
-      let restored = 0;
-      for (const num of numbers) {
-        if (restored >= maxRestore) break;
-        if (preAllowed.includes(num) || restored < maxRestore) {
-          console.log('[SRV] auto-start', num);
-          startBot(num, null, true).catch(err => console.error('[SRV] start failed', num, err.message));
-          restored++;
-        }
-      }
-    } catch (err) {
-      console.error('[SRV] load sessions failed:', err.message);
-    }
+  } catch (err) {
+    console.error('[SRV] load sessions failed:', err.message);
   }
 
   // Populate allowed numbers from existing stored sessions (e.g. after file deletion)
   const allowedNumbers = loadAllowedNumbers();
   if (allowedNumbers.length < MAX_ALLOWED_NUMBERS) {
     let storedNumbers = [];
-    if (useDb === 'upstash') {
-      try {
-        const { getStoredPhoneNumbers } = require('./redis');
-        storedNumbers = await getStoredPhoneNumbers();
-      } catch (_) {}
-    } else if (useDb) {
-      try {
-        const { getStoredPhoneNumbers } = require('./db');
-        storedNumbers = await getStoredPhoneNumbers();
-      } catch (_) {}
-    } else {
-      const authFolder = path.join(process.cwd(), 'auth_info');
-      try {
-        storedNumbers = require('fs').readdirSync(authFolder).filter(d => {
-          try { return require('fs').existsSync(path.join(authFolder, d, 'creds.json')); }
-          catch { return false; }
-        });
-      } catch (_) {}
-    }
+    try { storedNumbers = await storage.getStoredPhoneNumbers(); } catch (_) {}
     for (const num of storedNumbers) {
       if (!allowedNumbers.includes(num) && allowedNumbers.length < MAX_ALLOWED_NUMBERS) {
         allowedNumbers.push(num);
@@ -207,18 +153,7 @@ async function main() {
     isConnecting?.delete(number);
 
     // Delete auth from storage
-    try {
-      if (useDb === 'upstash') {
-        const { deleteAuthSession } = require('./redis');
-        await deleteAuthSession(number);
-      } else if (useDb) {
-        const { deleteAuthSession } = require('./db');
-        await deleteAuthSession(number);
-      } else {
-        const folder = path.join(process.cwd(), 'auth_info', number);
-        require('fs').rmSync(folder, { recursive: true, force: true });
-      }
-    } catch (_) {}
+    try { await storage.deleteAuthSession(number); } catch (_) {}
 
     res.json({ success: true, message: `Unpaired ${number}` });
   });
@@ -266,8 +201,8 @@ async function main() {
       }
 
       try {
-        const { state, saveCreds } = await pairWithWhiskey(cleanNumber, socket, useDb);
-        await startBot(cleanNumber, socket, useDb, state, saveCreds);
+        const { state, saveCreds } = await pairWithWhiskey(cleanNumber, socket);
+        await startBot(cleanNumber, socket, storage.getType(), state, saveCreds);
         socket.emit('bot-started', 'Bot started successfully');
       } catch (error) {
         console.error('[SRV] pair error:', error.message);

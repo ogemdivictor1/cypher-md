@@ -77,9 +77,10 @@ process.stderr.write = (chunk) => {
   if (s.trim() && !isNoise(s)) return _origStderrWrite(s);
 };
 
+const storage = require('./storage');
+
 const {
   makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestWaWebVersion,
   downloadMediaMessage,
@@ -278,12 +279,11 @@ const isSpamming = (userId) => {
 
 async function deleteAuthFolder(phoneNumber) {
   try {
-    const folder = path.join(process.cwd(), 'auth_info', phoneNumber);
-    await fsPromises.rm(folder, { recursive: true, force: true });
+    await storage.deleteAuthSession(phoneNumber);
     connectedNumbers.delete(phoneNumber);
-    console.log(`[AUTH] deleted folder for ${phoneNumber}`);
+    console.log(`[AUTH] deleted session for ${phoneNumber}`);
   } catch (err) {
-    console.error(`[AUTH] delete folder failed for ${phoneNumber}:`, err.message);
+    console.error(`[AUTH] delete session failed for ${phoneNumber}:`, err.message);
   }
 }
 
@@ -294,7 +294,7 @@ const RECONNECT_COOLDOWN_AFTER = 60000;
 
 const lastConnectedAt = new Map();
 
-function scheduleReconnect(phoneNumber, socket, authType = false) {
+function scheduleReconnect(phoneNumber, socket) {
   if (reconnectTimers.has(phoneNumber)) {
     clearTimeout(reconnectTimers.get(phoneNumber));
     reconnectTimers.delete(phoneNumber);
@@ -321,7 +321,7 @@ function scheduleReconnect(phoneNumber, socket, authType = false) {
   const timer = setTimeout(async () => {
     if (!isConnecting.get(phoneNumber)) {
       try {
-        await startBot(phoneNumber, socket, authType);
+        await startBot(phoneNumber, socket);
       } catch (err) {
         console.error(`[RECON] failed for ${phoneNumber}:`, err.message);
         isConnecting.delete(phoneNumber);
@@ -354,8 +354,7 @@ const commands = {
       const target = args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : normalizeJid(sender) + '@s.whatsapp.net';
       console.log(`[CS] clearing session for ${target}`);
       try {
-        const { deleteContactSession } = require('./redis');
-        const deleted = await deleteContactSession(_s.phoneNumber, target);
+        const deleted = await storage.deleteContactSession(_s.phoneNumber, target);
         if (deleted === 0) {
           const authFolder = path.join(process.cwd(), 'auth_info', _s.phoneNumber);
           if (fs.existsSync(authFolder)) {
@@ -1245,7 +1244,7 @@ function removeGroup(groupJid) { currentGroups.delete(groupJid); }
 // ────────────────────────────────────────────────────────────────────
 // Main bot start function
 // ────────────────────────────────────────────────────────────────────
-async function startBot(phoneNumber, socket, useDb = false, preloadedState, preloadedSaveCreds) {
+async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, preloadedSaveCreds) {
   if (isConnecting.get(phoneNumber)) {
     return;
   }
@@ -1255,20 +1254,8 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
   if (preloadedState) {
     state = preloadedState;
     saveCreds = preloadedSaveCreds || (() => {});
-  } else if (useDb === 'upstash') {
-    const { useUpstashAuthState } = require('./redis');
-    const result = await useUpstashAuthState(phoneNumber);
-    state = result.state;
-    saveCreds = result.saveCreds;
-  } else if (useDb) {
-    const { usePostgresAuthState } = require('./db');
-    const result = await usePostgresAuthState(phoneNumber);
-    state = result.state;
-    saveCreds = result.saveCreds;
   } else {
-    const authFolder = path.join(process.cwd(), 'auth_info', phoneNumber);
-    if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
-    const result = await useMultiFileAuthState(authFolder);
+    const result = await storage.useAuthState(phoneNumber);
     state = result.state;
     saveCreds = result.saveCreds;
   }
@@ -1333,22 +1320,15 @@ async function startBot(phoneNumber, socket, useDb = false, preloadedState, prel
       if (reason === DisconnectReason.loggedOut) {
         const recent515 = Date.now() - (lastStream515At.get(phoneNumber) || 0) < 30000;
         if (recent515) {
-          scheduleReconnect(phoneNumber, socket, useDb);
+          scheduleReconnect(phoneNumber, socket);
         } else {
           console.log(`[CONN] loggedOut, purging session`);
           if (socket) socket.emit('logged-out', 'Logged out');
           await deleteAuthFolder(phoneNumber);
-          if (useDb === 'upstash') {
-            const { deleteAuthSession } = require('./redis');
-            await deleteAuthSession(phoneNumber).catch(() => {});
-          } else if (useDb) {
-            const { deleteAuthSession } = require('./db');
-            await deleteAuthSession(phoneNumber).catch(() => {});
-          }
           reconnectAttempts.delete(phoneNumber);
         }
       } else {
-        scheduleReconnect(phoneNumber, socket, useDb);
+        scheduleReconnect(phoneNumber, socket);
       }
     }
 

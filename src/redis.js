@@ -113,4 +113,15 @@ async function getStoredPhoneNumbers() {
   return [...new Set(numbers)];
 }
 
-module.exports = { initRedis, useUpstashAuthState, loadSettings, saveSetting, deleteAuthSession, deleteContactSession, getStoredPhoneNumbers, getRedis: () => redis };
+async function loadBotState(phoneNumber) {
+  try {
+    const raw = await redis.get(`bot:state:${phoneNumber}`);
+    return raw || null;
+  } catch { return null; }
+}
+
+async function saveBotState(phoneNumber, data) {
+  await redis.set(`bot:state:${phoneNumber}`, JSON.stringify(data));
+}
+
+module.exports = { initRedis, useUpstashAuthState, loadSettings, saveSetting, deleteAuthSession, deleteContactSession, getStoredPhoneNumbers, loadBotState, saveBotState, getRedis: () => redis };

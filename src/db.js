@@ -107,4 +107,21 @@ async function getStoredPhoneNumbers() {
   return rows.map(r => r.phone_number);
 }
 
-module.exports = { initDb, setupTables, usePostgresAuthState, loadSettings, saveSetting, deleteAuthSession, getStoredPhoneNumbers, getPool: () => pool };
+async function loadBotState(phoneNumber) {
+  try {
+    const { rows } = await pool.query('SELECT value FROM bot_data WHERE key = $1', [`state:${phoneNumber}`]);
+    return rows.length ? rows[0].value : null;
+  } catch { return null; }
+}
+
+async function saveBotState(phoneNumber, data) {
+  await pool.query(
+    `INSERT INTO bot_data (key, value)
+     VALUES ($1, $2::jsonb)
+     ON CONFLICT (key)
+     DO UPDATE SET value = $2::jsonb, updated_at = NOW()`,
+    [`state:${phoneNumber}`, JSON.stringify(data)]
+  );
+}
+
+module.exports = { initDb, setupTables, usePostgresAuthState, loadSettings, saveSetting, deleteAuthSession, getStoredPhoneNumbers, loadBotState, saveBotState, getPool: () => pool };

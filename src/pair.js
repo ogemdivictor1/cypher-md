@@ -1,49 +1,20 @@
 const {
   makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   Browsers,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
+const storage = require('./storage');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
-const path = require('path');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
 
-async function pairWithWhiskey(phoneNumber, socket, useDb = false) {
+async function pairWithWhiskey(phoneNumber, socket) {
   // Wipe any stale session first so pairing always starts fresh
-  if (useDb === 'upstash') {
-    const { deleteAuthSession } = require('./redis');
-    await deleteAuthSession(phoneNumber).catch(() => {});
-  } else if (useDb) {
-    const { deleteAuthSession } = require('./db');
-    await deleteAuthSession(phoneNumber).catch(() => {});
-  } else {
-    const folder = path.join(process.cwd(), 'auth_info', phoneNumber);
-    try { fs.rmSync(folder, { recursive: true, force: true }); } catch (_) {}
-  }
+  await storage.deleteAuthSession(phoneNumber).catch(() => {});
 
   // Resolve auth backend
-  let state, saveCreds;
-  if (useDb === 'upstash') {
-    const { useUpstashAuthState } = require('./redis');
-    const result = await useUpstashAuthState(phoneNumber);
-    state = result.state;
-    saveCreds = result.saveCreds;
-  } else if (useDb) {
-    const { usePostgresAuthState } = require('./db');
-    const result = await usePostgresAuthState(phoneNumber);
-    state = result.state;
-    saveCreds = result.saveCreds;
-  } else {
-    const authFolder = path.join(process.cwd(), 'auth_info', phoneNumber);
-    await fsPromises.mkdir(authFolder, { recursive: true });
-    const result = await useMultiFileAuthState(authFolder);
-    state = result.state;
-    saveCreds = result.saveCreds;
-  }
+  const { state, saveCreds } = await storage.useAuthState(phoneNumber);
 
   const { version } = await fetchLatestBaileysVersion();
 
@@ -105,17 +76,7 @@ async function pairWithWhiskey(phoneNumber, socket, useDb = false) {
 
           if (reason === DisconnectReason.loggedOut) {
             socket.emit('logged-out', 'WhatsApp session logged out');
-            // Purge session from whichever backend
-            if (useDb === 'upstash') {
-              const { deleteAuthSession } = require('./redis');
-              await deleteAuthSession(phoneNumber).catch(() => {});
-            } else if (useDb) {
-              const { deleteAuthSession } = require('./db');
-              await deleteAuthSession(phoneNumber).catch(() => {});
-            } else {
-              const folder = path.join(process.cwd(), 'auth_info', phoneNumber);
-              try { fs.rmSync(folder, { recursive: true, force: true }); } catch (_) {}
-            }
+            await storage.deleteAuthSession(phoneNumber).catch(() => {});
             if (!resolved) { resolved = true; reject(new Error('Logged out')); }
           } else {
             socket.emit('error', 'Connection closed, please try again');
