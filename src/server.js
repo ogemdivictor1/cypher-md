@@ -184,9 +184,20 @@ async function main() {
         return;
       }
 
+      // If already connected or connecting, tear down the old session first
       if (connections.has(cleanNumber) || isConnecting?.has(cleanNumber)) {
-        socket.emit('error', 'This number is already connected or connecting');
-        return;
+        console.log(`[SRV] re-pairing ${cleanNumber} — killing old session`);
+        const oldConn = connections.get(cleanNumber);
+        if (oldConn) {
+          try {
+            oldConn.ev.removeAllListeners();
+            if (oldConn.ws) oldConn.ws.close();
+            if (typeof oldConn.end === 'function') oldConn.end();
+          } catch (_) {}
+          connections.delete(cleanNumber);
+          sessions.delete(cleanNumber);
+        }
+        isConnecting?.delete(cleanNumber);
       }
 
       // First-5-numbers rule: only the first 5 unique paired numbers are ever allowed
@@ -199,6 +210,9 @@ async function main() {
         allowedNumbers.push(cleanNumber);
         saveAllowedNumbers(allowedNumbers);
       }
+
+      // Wipe old auth session from DB so pairing starts fresh
+      await storage.deleteAuthSession(cleanNumber).catch(() => {});
 
       try {
         const { state, saveCreds } = await pairWithWhiskey(cleanNumber, socket);

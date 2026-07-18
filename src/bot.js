@@ -287,7 +287,7 @@ async function deleteAuthFolder(phoneNumber) {
   }
 }
 
-const RECONNECT_MAX_ATTEMPTS = 15;
+const RECONNECT_MAX_ATTEMPTS = 3;
 const RECONNECT_BASE_DELAY = 10;
 const RECONNECT_MAX_DELAY = 300;
 const RECONNECT_COOLDOWN_AFTER = 60000;
@@ -303,7 +303,8 @@ function scheduleReconnect(phoneNumber, socket) {
   reconnectAttempts.set(phoneNumber, attempt);
 
   if (attempt > RECONNECT_MAX_ATTEMPTS) {
-    console.log(`[RECON] ${phoneNumber} max attempts (${RECONNECT_MAX_ATTEMPTS}) reached, giving up`);
+    console.log(`[RECON] ${phoneNumber} max attempts (${RECONNECT_MAX_ATTEMPTS}) reached, purging stale session`);
+    deleteAuthFolder(phoneNumber).catch(() => {});
     reconnectAttempts.delete(phoneNumber);
     consecutive428.delete(phoneNumber);
     return;
@@ -1743,7 +1744,7 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
   });
 }
 
-// Cache cleanup
+// ── Quick cache pruning (every 5 min) ──
 setInterval(() => {
   const cutoff = Date.now() - 60000;
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -1763,11 +1764,69 @@ setInterval(() => {
       const date = key.split(':').pop();
       if (date < todayStr) s.antistatusCounts.delete(key);
     }
+    // Prune aiConversations — keep last 20 per conversation key
+    for (const [convKey, history] of s.aiConversations) {
+      if (history.length > 20) s.aiConversations.set(convKey, history.slice(-20));
+    }
   }
   if (processedMessages.size > 2000) {
     const toDelete = [...processedMessages].slice(0, 1000);
     for (const id of toDelete) processedMessages.delete(id);
   }
 }, 300000);
+
+// ── Deep stale cleanup (every 6 hours) ──
+const STALE_FILE_DAYS = 3;
+const STALE_FILE_MS = STALE_FILE_DAYS * 24 * 60 * 60 * 1000;
+setInterval(async () => {
+  const activeNumbers = new Set(connections.keys());
+
+  // 1. Clean auth_info/ folders for unconnected numbers older than 3 days
+  const authDir = path.join(process.cwd(), 'auth_info');
+  try {
+    const entries = fs.readdirSync(authDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const num = entry.name;
+      if (activeNumbers.has(num)) continue;
+      const folderPath = path.join(authDir, num);
+      const stat = fs.statSync(folderPath);
+      if (Date.now() - stat.mtimeMs > STALE_FILE_MS) {
+        fs.rmSync(folderPath, { recursive: true, force: true });
+        console.log(`[CLEANUP] removed stale auth folder: ${num}`);
+      }
+    }
+  } catch (_) {}
+
+  // 2. Clean vv_data_*.json files for unconnected numbers older than 3 days
+  try {
+    const files = fs.readdirSync(process.cwd()).filter(f => /^vv_data_\d+\.json$/.test(f));
+    for (const f of files) {
+      const num = f.replace('vv_data_', '').replace('.json', '');
+      if (activeNumbers.has(num)) continue;
+      const filePath = path.join(process.cwd(), f);
+      const stat = fs.statSync(filePath);
+      if (Date.now() - stat.mtimeMs > STALE_FILE_MS) {
+        fs.unlinkSync(filePath);
+        console.log(`[CLEANUP] removed stale data file: ${f}`);
+      }
+    }
+  } catch (_) {}
+
+  // 3. Clean stale lidToPhone entries (not linked to any active number)
+  for (const [k, v] of lidToPhone) {
+    const jid = k.includes('@') ? k.split('@')[0] : k;
+    if (!activeNumbers.has(jid) && !activeNumbers.has(v)) {
+      lidToPhone.delete(k);
+    }
+  }
+
+  // 4. Clean stale DB/Redis auth sessions for unconnected numbers
+  try {
+    await storage.cleanupStaleSessions([...activeNumbers]);
+  } catch (err) {
+    console.error(`[CLEANUP] DB session cleanup failed:`, err.message);
+  }
+}, 6 * 60 * 60 * 1000);
 
 module.exports = { startBot, connections, sessions, startTime, isConnecting };

@@ -103,6 +103,32 @@ async function deleteContactSession(phoneNumber, targetJid) {
   return 0;
 }
 
+async function cleanupStaleSessions(activeNumbers) {
+  const set = new Set(activeNumbers);
+  if (dbType === 'upstash') {
+    let cursor = 0;
+    do {
+      const [next, keys] = await impl.getRedis().scan(cursor, { match: 'auth:creds:*', count: 100 });
+      cursor = parseInt(next);
+      for (const k of keys) {
+        const num = k.replace('auth:creds:', '');
+        if (!set.has(num)) {
+          await impl.deleteAuthSession(num);
+          console.log(`[STORAGE] cleaned stale upstash session: ${num}`);
+        }
+      }
+    } while (cursor !== 0);
+  } else if (dbType === 'postgres') {
+    const stored = await impl.getStoredPhoneNumbers();
+    for (const num of stored) {
+      if (!set.has(num)) {
+        await impl.deleteAuthSession(num);
+        console.log(`[STORAGE] cleaned stale postgres session: ${num}`);
+      }
+    }
+  }
+}
+
 module.exports = {
   initBackend,
   getType,
@@ -112,4 +138,5 @@ module.exports = {
   loadBotState,
   saveBotState,
   deleteContactSession,
+  cleanupStaleSessions,
 };
