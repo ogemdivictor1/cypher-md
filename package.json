@@ -6,6 +6,7 @@
     "pair": "node src/pair.js"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@hapi/boom": "^10.0.1",
     "@lordmega/baileys": "latest",
     "@upstash/redis": "^1.38.0",
@@ -16,6 +17,7 @@
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.34.5",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "yt-search": "^2.13.1"
   }
 }

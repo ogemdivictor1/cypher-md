@@ -78,6 +78,8 @@ process.stderr.write = (chunk) => {
 };
 
 const storage = require('./storage');
+const ytdl = require('@distube/ytdl-core');
+const ytSearch = require('yt-search');
 
 const {
   makeWASocket,
@@ -1092,6 +1094,8 @@ const commands = {
         `⚠️ You will need to re-pair after running this.\n\n` +
         `• *.testimg*\n  Tests the media pipeline by sending a simple test image. ` +
         `Useful to verify that media uploads are working correctly.\n\n` +
+        `• *.play* / *.song* / *.yt* <name or URL>\n  Downloads audio from YouTube. ` +
+        `Provide a song name to search or a direct YouTube URL. The audio is sent as an MP3.\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `🛠️ *UTILITY COMMANDS*\n\n` +
         `• *.reverse* / *.r <text>*\n  Reverses the text you provide. Example: *.reverse hello* → "olleh". ` +
@@ -1192,10 +1196,45 @@ const commands = {
     args: [],
     groupAdminRequired: false,
   },
+  play: {
+    handler: async (conn, from, args) => {
+      if (!args.length) throw new Error('❌ Usage: .play <song name or YouTube URL>');
+      const query = args.join(' ');
+      let url = query;
+      let title = query;
+
+      if (!query.startsWith('http')) {
+        const searchResult = await ytSearch(query);
+        if (!searchResult?.videos?.length) throw new Error('❌ No results found');
+        url = searchResult.videos[0].url;
+        title = searchResult.videos[0].title;
+      }
+
+      await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
+
+      const stream = ytdl(url, { filter: 'audioonly', quality: 'highestaudio' });
+      const tmpFile = path.join(os.tmpdir(), `play_${Date.now()}.mp3`);
+      const writeStream = fs.createWriteStream(tmpFile);
+
+      await new Promise((resolve, reject) => {
+        stream.pipe(writeStream);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        stream.on('error', reject);
+      });
+
+      const buffer = fs.readFileSync(tmpFile);
+      await conn.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+    },
+    aliases: ['song', 'yt', 'audio'],
+    args: ['<song name or URL>'],
+    groupAdminRequired: false,
+  },
   menu: {
     handler: async (conn, from) => {
       const menuText = `*📋 CYPHER MD Commands*\n\n` +
-        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🧹 .clearsession\n🧪 .testimg\n🆔 .id / .jid\n\n` +
+        `🏓 .ping / .p\n🕐 .time\n🔄 .reverse / .r <text>\n💬 .quote\n📝 .bio\n🖼️ .getpp [@user]\n🎭 .sticker / .s\n🖼️ .toimage / .ti\n⏱️ .runtime / .uptime\n📊 .stats\n🧹 .clearsession\n🧪 .testimg\n🎵 .play / .song <name>\n🆔 .id / .jid\n\n` +
         `🤖 *AI & MEDIA*\n👻 .ghost [num] <text>\n📸 .vv (reply to VV)\n❓ ??? (reply to VV → DM)\n👁️ .monitor / .mon <number>\n\n` +
         `🤖 *AI CHAT*\n.aichat key <groq_key>\n.aichat add <num>\n.aichat remove <num>\n.aichat list\n.aichat system <prompt>\n.aichat addgc (in group)\n\n` +
         `🛡️ *GROUP (Admin)*\n.kick .warn .unwarn .ban .delete .mute .unmute\n.antilink on|off .antistatus on|off .tagall / .tag\n\n` +
