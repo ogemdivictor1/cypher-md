@@ -316,7 +316,7 @@ Uses `areJidsSameUser()` from Baileys, comparing against **both** `conn.user.id`
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `RECONNECT_MAX_ATTEMPTS` | 3 | Gives up and purges session after this many |
+| `RECONNECT_MAX_ATTEMPTS` | 5 | Gives up and purges stale session after this many |
 | `RECONNECT_BASE_DELAY` | 10s | Initial delay |
 | `RECONNECT_MAX_DELAY` | 300s | Maximum delay cap |
 | Jitter | ±30% | Random jitter applied to each delay |

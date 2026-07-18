@@ -289,7 +289,7 @@ async function deleteAuthFolder(phoneNumber) {
   }
 }
 
-const RECONNECT_MAX_ATTEMPTS = 3;
+const RECONNECT_MAX_ATTEMPTS = 5;
 const RECONNECT_BASE_DELAY = 10;
 const RECONNECT_MAX_DELAY = 300;
 const RECONNECT_COOLDOWN_AFTER = 60000;
