@@ -1241,9 +1241,7 @@ const commands = {
         const buildArgs = (url, useCookies) => {
           const a = ['--no-check-certificates', '--no-warnings', '--quiet',
             '--extractor-args', 'youtube:player_client=tv,web_embedded;player_skip=webpage',
-            '--force-ipv4', '-S', 'res:360', '-o', '-',
-            '--impersonate', 'chrome-136', '--js-runtime', 'node',
-            '--remote-components', 'ejs:github'];
+            '--force-ipv4', '-S', 'res:360', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) a.push('--cookies', cp);
           const proxy = process.env.YT_PROXY;
