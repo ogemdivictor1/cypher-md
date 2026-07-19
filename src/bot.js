@@ -1239,7 +1239,7 @@ const commands = {
         };
 
         const buildArgs = (url, useCookies) => {
-          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-f', 'best', '-o', '-'];
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) {
             a.push('--cookies', cp);
@@ -1258,6 +1258,11 @@ const commands = {
             }
           });
         });
+
+        if (fs.existsSync(cookiesSrc)) {
+          const stat = fs.statSync(cookiesSrc);
+          console.log('[play] cookies file size:', stat.size, 'bytes');
+        }
 
         let buffer;
 
