@@ -1260,20 +1260,22 @@ const commands = {
         });
 
         let buffer;
-        let triedWithCookies = false;
 
-        for (const attempt of [true, false]) {
-          const hasCookies = attempt && fs.existsSync(cookiesSrc);
-          if (hasCookies) triedWithCookies = true;
-          const a = buildArgs(url, hasCookies);
+        for (const useCookies of [true, false]) {
+          if (useCookies && !fs.existsSync(cookiesSrc)) {
+            logger.debug('No cookies file found, skipping cookie attempt');
+            continue;
+          }
+          const a = buildArgs(url, useCookies);
+          logger.debug({ useCookies, args: a.join(' ') }, 'yt-dlp attempt');
           try {
-            buffer = await exec(a, hasCookies);
+            buffer = await exec(a, useCookies);
             break;
           } catch (e) {
-            if (!e.useCookies || !/sign in|confirm you.*bot|requested format not available/i.test(e.error.message)) {
-              throw e.error;
-            }
-            if (!attempt) throw e.error;
+            const msg = e.error?.message || '';
+            logger.debug({ err: msg, useCookies, stderr: e.stderr }, 'yt-dlp attempt failed');
+            const isRetryable = /sign in|confirm you.*bot|requested format not available/i.test(msg);
+            if (!isRetryable || !useCookies) throw e.error;
           }
         }
 
