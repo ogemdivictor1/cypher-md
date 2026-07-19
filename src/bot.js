@@ -1262,6 +1262,18 @@ const commands = {
         if (fs.existsSync(cookiesSrc)) {
           const stat = fs.statSync(cookiesSrc);
           console.log('[play] cookies file size:', stat.size, 'bytes');
+          // sync format list for debugging
+          try {
+            const cp = getCookiesPath();
+            const listArgs = ['--no-check-certificates', '--no-warnings', '--list-formats'];
+            if (cp) listArgs.push('--cookies', cp);
+            listArgs.push(url);
+            const { execFileSync } = require('child_process');
+            const out = execFileSync(ytDlpPath, listArgs, { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
+            console.log('[play] --list-formats:', out.slice(0, 3000));
+          } catch (e) {
+            console.log('[play] --list-formats error:', e.stderr?.slice(0, 1000) || e.message);
+          }
         }
 
         let buffer;
