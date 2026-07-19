@@ -596,7 +596,12 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';
+      }
       if (!target) throw new Error('❌ Reply or mention.');
       if (target === botJid) throw new Error('❌ Cannot kick myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
@@ -612,7 +617,12 @@ const commands = {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';
+      }
       if (!target) throw new Error('❌ Reply or mention.');
       if (target === botJid) throw new Error('❌ Cannot warn myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
@@ -635,7 +645,12 @@ const commands = {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';
+      }
       if (!target) throw new Error('❌ Reply or mention.');
       const key = `${from}:${target}`;
       if (_s.warnings.has(key)) {
@@ -654,7 +669,12 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      const target = ctx?.participant || (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null);
+      let target = ctx?.participant;
+      if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
+      if (!target) {
+        const num = args[0]?.replace(/[^0-9]/g, '');
+        if (num) target = num + '@s.whatsapp.net';
+      }
       if (!target) throw new Error('❌ Reply or mention.');
       if (target === botJid) throw new Error('❌ Cannot ban myself.');
       if (!groupMeta.participants.some(p => p.id === target)) throw new Error('❌ Not in group.');
