@@ -596,7 +596,7 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
         const num = args[0]?.replace(/[^0-9]/g, '');
@@ -617,7 +617,7 @@ const commands = {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
         const num = args[0]?.replace(/[^0-9]/g, '');
@@ -645,7 +645,7 @@ const commands = {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
         const num = args[0]?.replace(/[^0-9]/g, '');
@@ -669,7 +669,7 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
         const num = args[0]?.replace(/[^0-9]/g, '');
@@ -1521,7 +1521,7 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
                 return areJidsSameUser(p.id, botPn) || (botLid && areJidsSameUser(p.id, botLid));
               };
               isBotAdmin = groupMeta.participants.some(checkAdmin);
-              isUserAdmin = isBotAdmin;
+              isUserAdmin = groupMeta.participants.some(p => p.admin && areJidsSameUser(p.id, sender));
             } catch (err) {
               console.error(`[CMD] Permission check failed:`, err.message);
               await conn.sendMessage(from, { text: '❌ Could not verify permissions.' });
