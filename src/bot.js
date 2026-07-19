@@ -1239,7 +1239,7 @@ const commands = {
         };
 
         const buildArgs = (url, useCookies) => {
-          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '--extractor-args', 'youtube:player_client=android', '-o', '-'];
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) {
             a.push('--cookies', cp);
@@ -1262,6 +1262,17 @@ const commands = {
         if (fs.existsSync(cookiesSrc)) {
           const stat = fs.statSync(cookiesSrc);
           console.log('[play] cookies file size:', stat.size, 'bytes');
+          try {
+            const cp = getCookiesPath();
+            const listArgs = ['--no-check-certificates', '--no-warnings', '--list-formats'];
+            if (cp) listArgs.push('--cookies', cp);
+            listArgs.push(url);
+            const { execFileSync } = require('child_process');
+            const out = execFileSync(ytDlpPath, listArgs, { encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 });
+            console.log('[play] FORMATS:', out.slice(0, 3000));
+          } catch (e) {
+            console.log('[play] FORMATS error:', e.stderr?.toString()?.slice(0, 1500) || e.message);
+          }
         }
 
         let buffer;
