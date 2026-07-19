@@ -18,15 +18,16 @@ function hasBinaries() {
 }
 
 const SECRETS_CONF = '/etc/secrets/warp.conf';
+const LOCAL_CONF = path.join(__dirname, '..', 'warp.conf');
 
 async function ensureRegistered() {
   if (fs.existsSync(WGCF_PROFILE)) return;
   fs.mkdirSync(WARP_DIR, { recursive: true });
 
-  // Check for pre-generated config uploaded by user
-  if (fs.existsSync(SECRETS_CONF)) {
-    console.log('[warp] using pre-generated WARP config from secrets');
-    fs.copyFileSync(SECRETS_CONF, WGCF_PROFILE);
+  const srcConf = [SECRETS_CONF, LOCAL_CONF].find(f => fs.existsSync(f));
+  if (srcConf) {
+    console.log('[warp] using pre-generated WARP config from', srcConf);
+    fs.copyFileSync(srcConf, WGCF_PROFILE);
     return;
   }
 
