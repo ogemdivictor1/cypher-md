@@ -1225,12 +1225,24 @@ const commands = {
 
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
-        const cookiesPath = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
+        const cookiesSrc = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
+        const cookiesFile = '/tmp/yt-cookies.txt';
+
+        const getCookiesPath = () => {
+          if (fs.existsSync(cookiesSrc)) {
+            try {
+              fs.copyFileSync(cookiesSrc, cookiesFile);
+              return cookiesFile;
+            } catch (_) { /* fallthrough */ }
+          }
+          return null;
+        };
 
         const buildArgs = (url, useCookies) => {
           const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-f', '18/best', '-o', '-'];
-          if (useCookies && fs.existsSync(cookiesPath)) {
-            a.push('--cookies', cookiesPath);
+          const cp = useCookies ? getCookiesPath() : null;
+          if (cp) {
+            a.push('--cookies', cp);
           }
           a.push(url);
           return a;
