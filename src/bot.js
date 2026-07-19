@@ -1226,6 +1226,7 @@ const commands = {
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
         const cookiesSrc = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
+        const cookiesFile = '/tmp/yt-cookies.txt';
 
         const getCookiesPath = () => {
           if (fs.existsSync(cookiesSrc)) {
@@ -1257,18 +1258,6 @@ const commands = {
             }
           });
         });
-
-        // Diagnostic: list available formats with cookies
-        try {
-          const cp = getCookiesPath();
-          const listArgs = ['--no-check-certificates', '--no-warnings', '--quiet', '--list-formats'];
-          if (cp) listArgs.push('--cookies', cp);
-          listArgs.push(url);
-          execFile(ytDlpPath, listArgs, { timeout: 15000 }, (err, stdout, stderr) => {
-            console.log('[play] --list-formats stdout:', stdout?.toString()?.slice(0, 2000));
-            if (err) console.log('[play] --list-formats stderr:', stderr?.toString()?.slice(0, 1000));
-          });
-        } catch (_) {}
 
         let buffer;
 
