@@ -125,10 +125,8 @@ const consecutive428 = new Map();
 const lastStream515At = new Map();
 const userGroups = new Set();
 const currentGroups = new Set();
-const processedMessages = new Set();
 // Anti-link & anti-spam
 const linkWhitelist = new Set(['youtube.com', 'youtu.be', 'google.com', 'github.com', 'wa.me']);
-const spamTracker = new Map();
 const SPAM_WINDOW_MS = 4000;
 const SPAM_MAX_MSGS = 5;
 const LINK_WARN_LIMIT = 5;
@@ -157,6 +155,8 @@ function createSessionState(phoneNumber) {
     aiConversations: new Map(),
     groqApiKey: '',
     aiSystemPrompt: '',
+    processedMessages: new Set(),
+    spamTracker: new Map(),
     totalCommandsAttempted: 0,
     totalCommandsSucceeded: 0,
   };
@@ -227,7 +227,7 @@ function loadSessionData(state) {
   }
 }
 
-function saveSessionData(state) {
+async function saveSessionData(state) {
   try {
     const data = {
       monitoredNumbers: [...state.monitoredNumbers],
@@ -242,7 +242,7 @@ function saveSessionData(state) {
       antistatusCounts: Object.fromEntries(state.antistatusCounts),
       warnings: Object.fromEntries(state.warnings),
     };
-    fs.writeFileSync(state.dataFile, JSON.stringify(data));
+    await fsPromises.writeFile(state.dataFile, JSON.stringify(data));
   } catch (err) {
     console.error(`[DATA] save failed for ${state.phoneNumber}:`, err.message);
   }
@@ -282,10 +282,10 @@ const hasLink = (text) => {
   return false;
 };
 
-const isSpamming = (userId) => {
+const isSpamming = (userId, _s) => {
   const now = Date.now();
-  if (!spamTracker.has(userId)) spamTracker.set(userId, []);
-  const timestamps = spamTracker.get(userId);
+  if (!_s.spamTracker.has(userId)) _s.spamTracker.set(userId, []);
+  const timestamps = _s.spamTracker.get(userId);
   while (timestamps.length && now - timestamps[0] > SPAM_WINDOW_MS) timestamps.shift();
   timestamps.push(now);
   return timestamps.length > SPAM_MAX_MSGS;
@@ -404,7 +404,7 @@ const commands = {
       _s.aiConversations.clear();
       _s.groqApiKey = '';
       _s.aiSystemPrompt = '';
-      saveSessionData(_s);
+      await saveSessionData(_s);
       await conn.sendMessage(from, { text: '🗄️ Database wiped (all persistent data cleared).' });
     },
     aliases: ['wipedb', 'resetdb'],
@@ -797,12 +797,12 @@ const commands = {
       }
       if (sub === 'clear') {
         _s.monitoredNumbers.clear();
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ Cleared.' });
       }
       if (sub === 'remove' && args[1]) {
         _s.monitoredNumbers.delete(args[1]);
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Stopped monitoring ${args[1]}.` });
       }
       const num = args[0]?.replace(/[^0-9]/g, '');
@@ -812,7 +812,7 @@ const commands = {
         if (repliedJid) {
           const normalized = normalizeJid(repliedJid);
           _s.monitoredNumbers.add(normalized);
-          saveSessionData(_s);
+          await saveSessionData(_s);
           return conn.sendMessage(from, { text: `✅ Monitoring *${normalized}*.` });
         }
         throw new Error('❌ Usage: .monitor <number> or reply.');
@@ -837,7 +837,7 @@ const commands = {
       } catch (err) {
         _s.monitoredNumbers.add(num);
       }
-      saveSessionData(_s);
+      await saveSessionData(_s);
       return conn.sendMessage(from, { text: `✅ Monitoring *${num}*.` });
     },
     aliases: ['mon'],
@@ -868,20 +868,20 @@ const commands = {
           throw new Error(`❌ Invalid API key: ${e.message}`);
         }
         _s.groqApiKey = key;
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ Groq API key set and verified.' });
       }
       if (sub === 'add' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
         if (!num) throw new Error('❌ Invalid number.');
         _s.aiTargets.add(num);
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI target added: ${num}` });
       }
       if (sub === 'remove' && args[1]) {
         const num = args[1].replace(/[^0-9]/g, '');
         _s.aiTargets.delete(num);
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Removed AI target: ${num}` });
       }
       if (sub === 'list') {
@@ -893,22 +893,22 @@ const commands = {
       if (sub === 'addgc') {
         if (!from.endsWith('@g.us')) throw new Error('❌ Send this in the target group.');
         _s.aiGroups.add(from);
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI replies enabled for this group. Tag or reply to me to chat.` });
       }
       if (sub === 'removegc' && args[1]) {
         _s.aiGroups.delete(args[1]);
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ Removed AI group.` });
       }
       if ((sub === 'system' || sub === 'prompt') && args.slice(1).join(' ').trim()) {
         _s.aiSystemPrompt = args.slice(1).join(' ').trim();
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI system prompt set.` });
       }
       if ((sub === 'system' || sub === 'prompt') && args[1] === 'clear') {
         _s.aiSystemPrompt = '';
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: `✅ AI system prompt cleared.` });
       }
       if (sub === 'clear' || sub === 'reset' || sub === 'allclear') {
@@ -917,7 +917,7 @@ const commands = {
         _s.aiGroups.clear();
         _s.aiSystemPrompt = '';
         _s.aiConversations.clear();
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return conn.sendMessage(from, { text: '✅ All AI data cleared (key, targets, groups, prompt, conversations).' });
       }
       if (sub === 'addgc') throw new Error('❌ Send .aichat addgc in the target group.');
@@ -1066,14 +1066,14 @@ const commands = {
             `Be responsible. 🙏`,
           mentions: allJids
         });
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return;
       }
       if (sub === 'off') {
         _s.antistatusEnabled.delete(from);
         _s.antistatusCounts.clear();
         await conn.sendMessage(from, { text: '🚫 Anti-status OFF.' });
-        saveSessionData(_s);
+        await saveSessionData(_s);
         return;
       }
       const status = _s.antistatusEnabled.has(from) ? 'ON' : 'OFF';
@@ -1261,28 +1261,17 @@ const commands = {
           });
         });
 
-        if (fs.existsSync(cookiesSrc)) {
-          const stat = fs.statSync(cookiesSrc);
-          console.log('[play] cookies file size:', stat.size, 'bytes');
-        }
-
         let buffer;
 
         for (const useCookies of [true, false]) {
           const cookieFileExists = fs.existsSync(cookiesSrc);
-          if (useCookies && !cookieFileExists) {
-            console.log('[play] no cookies file at', cookiesSrc);
-            continue;
-          }
-          console.log('[play] attempt useCookies=%s cookiesExist=%s', useCookies, cookieFileExists);
+          if (useCookies && !cookieFileExists) continue;
           const a = buildArgs(url, useCookies);
           try {
             buffer = await exec(a, useCookies);
-            console.log('[play] success with useCookies=%s', useCookies);
             break;
           } catch (e) {
             const msg = e.error?.message || '';
-            console.log('[play] failed useCookies=%s error=%s', useCookies, msg);
             const isRetryable = /sign in|confirm you.*bot|requested format.*not available/i.test(msg);
             if (!isRetryable || !useCookies) throw e.error;
           }
@@ -1291,31 +1280,7 @@ const commands = {
         if (buffer.length === 0) throw new Error('Empty audio');
         await conn.sendMessage(from, { audio: buffer, mimetype: audioMime(buffer), ptt: false });
       } catch (err) {
-        const ytErr = err.message || '';
-        console.log('[play] yt-dlp failed, trying cobalt...');
-        try {
-          const cobaltRes = await fetch(process.env.COBALT_API || 'https://api.cobalt.tools/', {
-            method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, downloadMode: 'audio', audioFormat: 'best', filenameStyle: 'basic' }),
-            signal: AbortSignal.timeout(30000)
-          });
-          if (!cobaltRes.ok) throw new Error(`Cobalt API ${cobaltRes.status}`);
-          const data = await cobaltRes.json();
-          if (data.status === 'tunnel' || data.status === 'redirect') {
-            const audioRes = await fetch(data.url, { signal: AbortSignal.timeout(60000) });
-            if (!audioRes.ok) throw new Error(`Cobalt download ${audioRes.status}`);
-            const audioBuf = Buffer.from(await audioRes.arrayBuffer());
-            if (audioBuf.length > 0) {
-              await conn.sendMessage(from, { audio: audioBuf, mimetype: audioMime(audioBuf), ptt: false });
-              return;
-            }
-          }
-          throw new Error('Cobalt: no audio returned');
-        } catch (cobaltErr) {
-          console.log('[play] cobalt also failed:', cobaltErr.message);
-          throw new Error(`❌ Playback failed: ${ytErr}`);
-        }
+        throw new Error(`❌ Playback failed: ${err.message}`);
       }
     },
     aliases: ['song', 'yt', 'audio'],
@@ -1649,8 +1614,8 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
 
     // Dedup
     if (!msg?.message) return;
-    if (processedMessages.has(msg.key.id)) { return; }
-    processedMessages.add(msg.key.id);
+    if (_s.processedMessages.has(msg.key.id)) { return; }
+    _s.processedMessages.add(msg.key.id);
 
     const from = msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
@@ -1681,7 +1646,7 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
             lidToPhone.set(norm, phoneNorm);
             lidToPhone.set(phoneNorm, norm);
             shouldAI = _s.aiTargets.has(phoneNorm);
-            saveSessionData(_s);
+            await saveSessionData(_s);
           }
         } catch (_) {}
       }
@@ -1822,12 +1787,12 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
         const left = 3 - count;
         await conn.sendMessage(from, { text: `🚫 @${sender.split('@')[0]} do not tag this group in your status! (${count}/3) — ${left} ${left === 1 ? 'mention' : 'mentions'} left today.`, mentions: [sender] });
       }
-      saveSessionData(_s);
+      await saveSessionData(_s);
       return;
     }
 
     // Anti-spam
-    if (!msg.key?.fromMe && body && isSpamming(sender)) {
+    if (!msg.key?.fromMe && body && isSpamming(sender, _s)) {
       try {
         if (!isGroup) {
           await conn.blockUser(sender, 'block');
@@ -1878,15 +1843,15 @@ async function startBot(phoneNumber, socket, _useDbIgnored, preloadedState, prel
 setInterval(() => {
   const cutoff = Date.now() - 60000;
   const todayStr = new Date().toISOString().slice(0, 10);
-  for (const [key, val] of spamTracker) {
-    const recent = val.filter(t => t > cutoff);
-    if (recent.length) spamTracker.set(key, recent); else spamTracker.delete(key);
-  }
   for (const [key, val] of groupMetaCache) {
     if (Date.now() - val.ts > GROUP_CACHE_TTL) groupMetaCache.delete(key);
   }
   const expire = Date.now() - 86400000;
   for (const [, s] of sessions) {
+    for (const [key, val] of s.spamTracker) {
+      const recent = val.filter(t => t > cutoff);
+      if (recent.length) s.spamTracker.set(key, recent); else s.spamTracker.delete(key);
+    }
     for (const [key, val] of s.messageStore) {
       if (val.timestamp < expire) s.messageStore.delete(key);
     }
@@ -1898,10 +1863,11 @@ setInterval(() => {
     for (const [convKey, history] of s.aiConversations) {
       if (history.length > 20) s.aiConversations.set(convKey, history.slice(-20));
     }
-  }
-  if (processedMessages.size > 2000) {
-    const toDelete = [...processedMessages].slice(0, 1000);
-    for (const id of toDelete) processedMessages.delete(id);
+    // Prune per-connection processedMessages
+    if (s.processedMessages.size > 2000) {
+      const toDelete = [...s.processedMessages].slice(0, 1000);
+      for (const id of toDelete) s.processedMessages.delete(id);
+    }
   }
 }, 300000);
 

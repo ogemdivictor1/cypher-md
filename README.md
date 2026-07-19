@@ -25,8 +25,10 @@ A multi-device WhatsApp bot powered by [Baileys](https://github.com/WhiskeySocke
 - [ID & JID System](#id--jid-system)
 - [Admin Determination](#admin-determination)
 - [Reconnection Logic](#reconnection-logic)
+- [Audio Download (`.play` / `.song`)](#audio-download-play--song)
 - [State Persistence](#state-persistence)
 - [Cache & Stale Session Cleanup](#cache--stale-session-cleanup)
+- [Multi-Bot Performance](#multi-bot-performance)
 - [Custom Patches](#custom-patches)
 - [File Structure](#file-structure)
 - [Environment Variables](#environment-variables)
@@ -332,50 +334,49 @@ Downloads YouTube audio and sends it as a WhatsApp audio message.
 
 **Search**: Uses `yt-search` for video lookup by name or handles direct YouTube URLs.
 
-**Download**: Uses the `yt-dlp` binary (bundled via `youtube-dl-exec`) spawned via `child_process.execFile`.
+**Download**: Uses the `yt-dlp` binary (bundled via `youtube-dl-exec` v3.1.9, standalone yt-dlp 2026.07.04) spawned via `child_process.execFile`.
 
 **MIME auto-detection**: The raw buffer is inspected for magic bytes to determine the format (`audio/webm` for Opus, `audio/mpeg` for MP3, `audio/mp4` for AAC/M4A), and the correct mimetype is sent.
 
-> **Render / cloud deployments**: YouTube may flag datacenter IPs and return `"Sign in to confirm you're not a bot"`. Set `YOUTUBE_COOKIES` to a Netscape-format cookies file exported from a logged-in browser. See [yt-dlp cookie FAQ](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp).
+### 🚧 The Problem
 
-### ⚠️ The Saga (What Didn't Work First)
+YouTube's CDN blocks datacenter IPs (Render, AWS, GCP, etc.) at the connection level. Even with valid signed-in cookies:
 
-YouTube keeps changing their anti-scraping mechanisms. Every library we tried eventually broke:
+- **`web` / `web_safari` player clients** negotiate **SABR** (streaming-based ABR) — yt-dlp receives zero downloadable formats ("requested format not available").
+- Cookies alone bypass the sign-in wall, but SABR still returns no URL-based formats.
+- Cobalt API returns `400` from Render IPs.
 
-**Attempt 1 — Cobalt API** (`api.cobalt.tools`)
-- Search worked via `yt-search`. Cobalt returned `400 error.api.auth.jwt.missing`.
-- The public API now requires a JWT auth token (Turnstile) — not usable without self-hosting.
+### ✅ The Three-Layer Bypass
 
-**Attempt 2 — `@distube/ytdl-core`** (`highestaudio`)
-- Audio extracted but immediately failed with `connectionReplaced` at the Baileys layer.
-- Switching to `lowestaudio` still hit `403` — the library couldn't parse YouTube's new player cipher/n-transform functions.
+Three concurrent measures, all required:
 
-**Attempt 3 — `youtube-dl-exec` / yt-dlp** (raw binary)
-- yt-dlp needed Python at runtime on Render, plus YouTube started requiring a signed-in session.
-- Ran into `"sign in to confirm you're not a bot"` blocks.
+| Layer | What | Why |
+|-------|------|-----|
+| **1. Proxy** | Cloudflare WARP → SOCKS5 `127.0.0.1:1080` | Routes traffic through Cloudflare's residential-like IP range — YouTube CDN allows the connection |
+| **2. Player Client** | `android_vr,ios_downgraded` | These clients don't use SABR — yt-dlp receives the full format list |
+| **3. Cookies** | Netscape cookies from logged-in YouTube session | Bypasses "Sign in to confirm you're not a bot" |
 
-**Attempt 4 — `youtubei.js`** (recommended approach)
-- Pure JS InnerTube client — no binary, no cookies. Search worked beautifully.
-- **BUT**: YouTube changed their API response to send `"url": false` and `"cipher": false` for **all** formats. No download URL anywhere.
-- Confirmed by scraping raw `ytInitialPlayerResponse` from the watch page — same result. YouTube now only hands out URLs through ABR segment streaming.
-- `youtubei.js`'s `download()` throws `"No valid URL to decipher"`. Both `@distube/ytdl-core` and `play-dl` hit the same wall.
-
-**Attempt 5 — `play-dl`** (yet another JS extractor)
-- Same fundamental issue: YouTube changed the API response format. All formats returned `url: false`.
-
-### ✅ What Finally Worked
-
-Stick with the **bundled `yt-dlp` binary** (shipped by `youtube-dl-exec`) called via `child_process.execFile`:
+The final yt-dlp invocation:
 
 ```
-yt-dlp.exe <URL> --extract-audio --no-check-certificates --no-warnings --quiet -o -
+yt-dlp <URL> --no-check-certificates --no-warnings --quiet \
+  --extractor-args "youtube:player_client=android_vr,ios_downgraded" \
+  --force-ipv4 -S res:360 -o - \
+  --cookies /tmp/yt-cookies.txt \
+  --proxy socks5://127.0.0.1:1080
 ```
 
-- yt-dlp handles YouTube's ABR streaming, cipher changes, and format negotiation internally.
-- The `--extract-audio` flag picks the best audio-only stream (Opus in WebM container).
-- Binary output piped to stdout, buffered, MIME-detected, and sent via WhatsApp.
-- Works on Render (Linux binary auto-downloads via `youtube-dl-exec` postinstall).
-- Falls back to `YT_DLP_PATH` env var if the binary is installed elsewhere.
+See [Render Deploy Guide](#render-deploy-guide) for full setup instructions.
+
+### WARP Proxy Infrastructure
+
+- **wgcf** v2.2.31 — registers a Cloudflare WARP account and generates WireGuard config
+- **wireproxy** v1.1.2 — userspace WireGuard → SOCKS5 proxy on `127.0.0.1:1080`
+- Both binaries auto-downloaded to `bin/` via `scripts/download-warp.js` during `npm install` (postinstall)
+- `warp.conf` — pre-generated WARP config (committed, also deployable as Render Secret File)
+- Registration run from a residential IP — Render's IP hits Cloudflare's 429 rate limit
+- `src/warp.js` — starts wireproxy with the config, sets `process.env.YT_PROXY`
+- `src/server.js` — imports warp module, calls `warp.start()` during boot
 
 ### MIME Detection
 
@@ -388,6 +389,14 @@ function audioMime(buf) {
   return 'audio/mpeg';  // fallback
 }
 ```
+
+### Render Deploy Guide
+
+1. **Create a Render Secret File** named `warp.conf` with the pre-generated WARP WireGuard config (same format as committed `warp.conf`).
+2. **Set `YOUTUBE_COOKIES`** env var to point to a Netscape-format cookies file exported from a logged-in YouTube browser session. Use a Render **Secret File** mounted at `/etc/secrets/yt-cookies.txt` and set `YOUTUBE_COOKIES=/etc/secrets/yt-cookies.txt`.
+3. Build command: `npm install` (postinstall downloads wgcf + wireproxy).
+4. Start command: `npm start` (boots server → warp.js starts wireproxy → sets YT_PROXY).
+5. Verify in logs: `[warp] wireproxy started on 127.0.0.1:1080`.
 
 ---
 
@@ -436,6 +445,36 @@ Bot state DB functions (`loadBotState`/`saveBotState`) exist in both backends fo
 
 ---
 
+## Multi-Bot Performance
+
+When running 5 phone numbers simultaneously under a single Node.js process, uneven command response times can occur due to event-loop contention. Four fixes were applied to ensure fair scheduling across all connections:
+
+### 1. Per-Connection Dedup (`processedMessages`)
+
+**Problem**: A single global `Set` tracked all message IDs across every connection. When Bot A's messages filled the set, the 2000-entry pruning could evict Bot B's IDs, causing re-processing delays.
+
+**Fix**: Each connection now owns its own `processedMessages` set via `createSessionState()`.
+
+### 2. Async State Persistence (`saveSessionData`)
+
+**Problem**: `saveSessionData()` used `fs.writeFileSync` — a **synchronous blocking** call. Any bot saving state (`.monitor`, `.aichat`, `.antistatus`) froze the entire event loop for all 5 connections until the disk write completed.
+
+**Fix**: Switched to `await fsPromises.writeFile` (async, non-blocking). All 16 call sites were updated to `await`.
+
+### 3. Immediate Message Processing (removed `setTimeout(0)`)
+
+**Problem**: Every incoming message was deferred to Node.js' **timer queue** via `setTimeout(() => {...}, 0)`. All 5 connections' message handlers queued in the same timer phase — a slow command on Bot A (e.g., `.play` + yt-dlp) blocked Bot B's `.ping` response.
+
+**Fix**: Removed the `setTimeout` wrapper. The handler is now an `async` function directly on `messages.upsert`. Async/await naturally yields to the event loop at each `await`, giving fair interleaving between connections.
+
+### 4. Per-Connection Spam Tracker
+
+**Problem**: `spamTracker` was a global `Map` shared across all connections, creating unnecessary lock contention.
+
+**Fix**: Moved into `createSessionState()`, isolated per connection.
+
+---
+
 ## Why Two Baileys?
 
 The bot uses **two** Baileys packages simultaneously:
@@ -472,12 +511,15 @@ Unwraps `viewOnceMessage` in `getMediaType()` so `mediatype` is populated for VV
 ```
 ├── src/
 │   ├── server.js              # Express + Socket.IO server, admin, pairing (224 lines)
-│   ├── bot.js                 # Core bot: commands, connection mgmt, anti-x, AI, VV (1904 lines)
+│   ├── warp.js                # WARP proxy launcher (wireproxy → SOCKS5)
+│   ├── bot.js                 # Core bot: commands, connection mgmt, anti-x, AI, VV (~1900 lines)
 │   ├── pair.js                # WhatsApp pairing code flow (119 lines)
 │   ├── storage.js             # Unified storage abstraction — auto-detects backend (142 lines)
 │   ├── redis.js               # Upstash Redis auth backend (124 lines)
 │   ├── db.js                  # PostgreSQL auth backend (127 lines)
 │   └── session-sweeper.js     # Periodic stale session cleaner (not wired)
+├── scripts/
+│   └── download-warp.js       # Downloads wgcf + wireproxy binaries on postinstall
 ├── public/
 │   ├── index.html             # Pairing UI with Matrix rain + PWA
 │   ├── admin.html             # Admin dashboard
@@ -485,6 +527,7 @@ Unwraps `viewOnceMessage` in `getMediaType()` so `mediatype` is populated for VV
 │   ├── manifest.json / sw.js  # PWA support
 │   └── icon.svg               # PWA icon
 ├── allowed_numbers.json       # Whitelist of up to 5 numbers (auto-created)
+├── warp.conf                  # Pre-generated WARP WireGuard config (also deployable as Render Secret)
 ├── AGENTS.md                  # Custom patch documentation
 ├── .env                       # Environment variables
 └── package.json
@@ -506,10 +549,13 @@ DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
 # YouTube cookies file (Netscape format) — required for .play on Render/bots
 # Export from browser: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
-YOUTUBE_COOKIES=/path/to/cookies.txt
+YOUTUBE_COOKIES=/etc/secrets/yt-cookies.txt
 
 # Custom yt-dlp binary path (auto-detected if not set)
 YT_DLP_PATH=/opt/render/project/src/node_modules/youtube-dl-exec/bin/yt-dlp
+
+# Proxy URL for yt-dlp (set automatically by src/warp.js)
+# YT_PROXY=socks5://127.0.0.1:1080  (auto-injected)
 ```
 
 ---
