@@ -1227,27 +1227,10 @@ const commands = {
 
         const args = [
           '--no-check-certificates', '--no-warnings', '--quiet',
-          '-f', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/18/best',
+          '-f', '18/best',
           '-o', '-',
           url
         ];
-        if (process.env.YOUTUBE_COOKIES) {
-          const src = process.env.YOUTUBE_COOKIES;
-          console.log('[PLAY] YOUTUBE_COOKIES=' + src);
-          try {
-            const stat = fs.statSync(src);
-            console.log('[PLAY] cookies file exists, size=' + stat.size);
-            const raw = fs.readFileSync(src, 'utf8');
-            console.log('[PLAY] cookies read, length=' + raw.length + ' lines=' + raw.split('\n').length);
-            const tmp = path.join(os.tmpdir(), 'yt-cookies.txt');
-            fs.writeFileSync(tmp, raw, 'utf8');
-            console.log('[PLAY] cookies written to tmp=' + tmp);
-            args.push('--cookies', tmp);
-          } catch (e) {
-            console.log('[PLAY] cookie fallback to src, err=' + e.message);
-            args.push('--cookies', src);
-          }
-        }
 
         const buffer = await new Promise((resolve, reject) => {
           execFile(ytDlpPath, args, { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
