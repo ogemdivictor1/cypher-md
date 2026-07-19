@@ -94,7 +94,7 @@ Open `http://localhost:3000`, enter a phone number (`234XXXXXXXXXX`), enter the 
 **URL**: `http://your-host:3000/admin`
 
 **Credentials** (hardcoded in `src/server.js:35-36`):
-- Username: `cypher2dwrld` / Password: `4265803791`
+- Username: `` / Password: ``
 
 - Dashboard with live connection status per number
 - Unpair: removes number, disconnects socket, deletes auth from backend
