@@ -1239,7 +1239,7 @@ const commands = {
         };
 
         const buildArgs = (url, useCookies) => {
-          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '--extractor-args', 'youtube:player_client=mweb', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) {
             a.push('--cookies', cp);
