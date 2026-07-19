@@ -595,7 +595,7 @@ const commands = {
   kick: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
       let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
@@ -616,7 +616,7 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
       let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
@@ -644,7 +644,7 @@ const commands = {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
       const _s = conn.state;
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
       let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
@@ -668,7 +668,7 @@ const commands = {
   ban: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin, botJid) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
       let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) target = ctx.mentionedJid[0];
       if (!target) {
@@ -688,8 +688,8 @@ const commands = {
   promote: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) {
         target = ctx.mentionedJid[0];  // @mention
       }
@@ -709,8 +709,8 @@ const commands = {
   demote: {
     handler: async (conn, from, args, msg, sender, groupMeta, isAdmin) => {
       if (!isAdmin) throw new Error('❌ Not admin.');
-      const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      let target = ctx?.participant;
+      const ctx = normalizeMessageContent(msg.message)?.extendedTextMessage?.contextInfo;
+      let target = (ctx?.stanzaId && ctx?.participant) || null;
       if (!target && ctx?.mentionedJid?.length) {
         target = ctx.mentionedJid[0];  // @mention
       }
