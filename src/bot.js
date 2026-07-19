@@ -1225,23 +1225,45 @@ const commands = {
 
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
-        const args = [
-          '--no-check-certificates', '--no-warnings', '--quiet',
-          '-f', '18/best',
-          '-o', '-',
-          url
-        ];
+        const cookiesPath = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
 
-        const buffer = await new Promise((resolve, reject) => {
+        const buildArgs = (url, useCookies) => {
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-f', '18/best', '-o', '-'];
+          if (useCookies && fs.existsSync(cookiesPath)) {
+            a.push('--cookies', cookiesPath);
+          }
+          a.push(url);
+          return a;
+        };
+
+        const exec = (args, useCookies) => new Promise((resolve, reject) => {
           execFile(ytDlpPath, args, { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
             if (err && !stdout?.length) {
               const msg = stderr?.toString()?.split('\n')?.filter(l => l && !l.includes('WARNING'))?.pop() || err.message;
-              reject(new Error(msg));
+              reject({ error: new Error(msg), args, useCookies, stderr: stderr?.toString() });
             } else {
               resolve(stdout);
             }
           });
         });
+
+        let buffer;
+        let triedWithCookies = false;
+
+        for (const attempt of [true, false]) {
+          const hasCookies = attempt && fs.existsSync(cookiesPath);
+          if (hasCookies) triedWithCookies = true;
+          const a = buildArgs(url, hasCookies);
+          try {
+            buffer = await exec(a, hasCookies);
+            break;
+          } catch (e) {
+            if (!e.useCookies || !/sign in|confirm you.*bot|requested format not available/i.test(e.error.message)) {
+              throw e.error;
+            }
+            if (!attempt) throw e.error;
+          }
+        }
 
         if (buffer.length === 0) throw new Error('Empty audio');
         await conn.sendMessage(from, { audio: buffer, mimetype: audioMime(buffer), ptt: false });
