@@ -1263,7 +1263,7 @@ const commands = {
         let triedWithCookies = false;
 
         for (const attempt of [true, false]) {
-          const hasCookies = attempt && fs.existsSync(cookiesPath);
+          const hasCookies = attempt && fs.existsSync(cookiesSrc);
           if (hasCookies) triedWithCookies = true;
           const a = buildArgs(url, hasCookies);
           try {
