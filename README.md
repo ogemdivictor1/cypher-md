@@ -336,6 +336,8 @@ Downloads YouTube audio and sends it as a WhatsApp audio message.
 
 **MIME auto-detection**: The raw buffer is inspected for magic bytes to determine the format (`audio/webm` for Opus, `audio/mpeg` for MP3, `audio/mp4` for AAC/M4A), and the correct mimetype is sent.
 
+> **Render / cloud deployments**: YouTube may flag datacenter IPs and return `"Sign in to confirm you're not a bot"`. Set `YOUTUBE_COOKIES` to a Netscape-format cookies file exported from a logged-in browser. See [yt-dlp cookie FAQ](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp).
+
 ### ⚠️ The Saga (What Didn't Work First)
 
 YouTube keeps changing their anti-scraping mechanisms. Every library we tried eventually broke:
@@ -501,6 +503,13 @@ UPSTASH_REDIS_TOKEN=your_token_here
 DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
 # OR neither → file-based auth
+
+# YouTube cookies file (Netscape format) — required for .play on Render/bots
+# Export from browser: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
+YOUTUBE_COOKIES=/path/to/cookies.txt
+
+# Custom yt-dlp binary path (auto-detected if not set)
+YT_DLP_PATH=/opt/render/project/src/node_modules/youtube-dl-exec/bin/yt-dlp
 ```
 
 ---

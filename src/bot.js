@@ -1236,15 +1236,11 @@ const commands = {
 
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
+        const args = [url, '--extract-audio', '--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
+        if (process.env.YOUTUBE_COOKIES) args.push('--cookies', process.env.YOUTUBE_COOKIES);
+
         const buffer = await new Promise((resolve, reject) => {
-          execFile(ytDlpPath, [
-            url,
-            '--extract-audio',
-            '--no-check-certificates',
-            '--no-warnings',
-            '--quiet',
-            '-o', '-'
-          ], { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
+          execFile(ytDlpPath, args, { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
             if (err && !stdout?.length) {
               const msg = stderr?.toString()?.split('\n')?.filter(l => l && !l.includes('WARNING'))?.pop() || err.message;
               reject(new Error(msg));
