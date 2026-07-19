@@ -17,9 +17,18 @@ function hasBinaries() {
   return fs.existsSync(WGCF_BIN) && fs.existsSync(WIREPROXY_BIN);
 }
 
+const SECRETS_CONF = '/etc/secrets/warp.conf';
+
 async function ensureRegistered() {
   if (fs.existsSync(WGCF_PROFILE)) return;
   fs.mkdirSync(WARP_DIR, { recursive: true });
+
+  // Check for pre-generated config uploaded by user
+  if (fs.existsSync(SECRETS_CONF)) {
+    console.log('[warp] using pre-generated WARP config from secrets');
+    fs.copyFileSync(SECRETS_CONF, WGCF_PROFILE);
+    return;
+  }
 
   console.log('[warp] registering with Cloudflare WARP...');
   execFileSync(WGCF_BIN, ['register', '--accept-tos'], {
@@ -112,6 +121,7 @@ async function start() {
     console.log('[warp] ✅ SOCKS5 proxy on', PROXY_ADDR);
   } catch (err) {
     console.error('[warp] ❌ setup failed:', err.message);
+    console.log('[warp] to use WARP, generate wgcf-profile.conf locally and upload as Render Secret File named "warp.conf"');
     console.log('[warp] .play will fall back to direct yt-dlp');
   }
 }
