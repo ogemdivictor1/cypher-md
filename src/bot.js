@@ -81,15 +81,6 @@ const storage = require('./storage');
 const ytSearch = require('yt-search');
 const { execFile } = require('child_process');
 
-function audioMime(buf) {
-  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';
-  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return 'audio/mpeg';
-  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'audio/webm';
-  if (buf[0] === 0x66 && buf[1] === 0x74 && buf[2] === 0x79 && buf[3] === 0x70) return 'audio/mp4';
-  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'audio/mp4';
-  return 'audio/mpeg';
-}
-
 const {
   makeWASocket,
   DisconnectReason,
@@ -107,11 +98,9 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const os = require('os');
 const sharp = require('sharp');
+const { YOUTUBE_DL_PATH } = require('youtube-dl-exec/src/constants');
 
-const ytDlpPath = process.env.YT_DLP_PATH || path.join(
-  __dirname, '..', 'node_modules', 'youtube-dl-exec', 'bin',
-  'yt-dlp' + (process.platform === 'win32' ? '.exe' : '')
-);
+const ytDlpPath = process.env.YT_DLP_PATH || YOUTUBE_DL_PATH;
 
 function audioMime(buf) {
   if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';
@@ -1236,13 +1225,19 @@ const commands = {
 
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
-        const args = [url, '--extract-audio', '--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
+        const args = [
+          '--no-check-certificates', '--no-warnings', '--quiet',
+          '--extractor-args', 'youtube:player_client=android',
+          '-f', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/18/best',
+          '-o', '-',
+          url
+        ];
         if (process.env.YOUTUBE_COOKIES) {
           const src = process.env.YOUTUBE_COOKIES;
           try {
-            const raw = require('fs').readFileSync(src, 'utf8');
-            const tmp = require('path').join(require('os').tmpdir(), 'yt-cookies.txt');
-            require('fs').writeFileSync(tmp, raw, 'utf8');
+            const raw = fs.readFileSync(src, 'utf8');
+            const tmp = path.join(os.tmpdir(), 'yt-cookies.txt');
+            fs.writeFileSync(tmp, raw, 'utf8');
             args.push('--cookies', tmp);
           } catch (_) {
             args.push('--cookies', src);
