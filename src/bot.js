@@ -79,6 +79,16 @@ process.stderr.write = (chunk) => {
 
 const storage = require('./storage');
 const ytSearch = require('yt-search');
+const { execFile } = require('child_process');
+
+function audioMime(buf) {
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return 'audio/mpeg';
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'audio/webm';
+  if (buf[0] === 0x66 && buf[1] === 0x74 && buf[2] === 0x79 && buf[3] === 0x70) return 'audio/mp4';
+  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'audio/mp4';
+  return 'audio/mpeg';
+}
 
 const {
   makeWASocket,
@@ -97,6 +107,20 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const os = require('os');
 const sharp = require('sharp');
+
+const ytDlpPath = process.env.YT_DLP_PATH || path.join(
+  __dirname, '..', 'node_modules', 'youtube-dl-exec', 'bin',
+  'yt-dlp' + (process.platform === 'win32' ? '.exe' : '')
+);
+
+function audioMime(buf) {
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return 'audio/mpeg';
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'audio/webm';
+  if (buf[0] === 0x66 && buf[1] === 0x74 && buf[2] === 0x79 && buf[3] === 0x70) return 'audio/mp4';
+  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'audio/mp4';
+  return 'audio/mpeg';
+}
 
 // ------------------------------------------------------------------
 // State (all in‑memory, no database)
@@ -1210,32 +1234,28 @@ const commands = {
           title = searchResult.videos[0].title;
         }
 
-        await conn.sendMessage(from, { text: `⏳ Processing *${title.replace(/\*/g, '')}*...` });
+        await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
-        const cobaltHost = process.env.COBALT_API || 'https://api.cobalt.tools';
-        console.log('[PLAY] URL sent to Cobalt:', url);
-
-        const res = await fetch(`${cobaltHost}/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ url, downloadMode: 'audio', audioFormat: 'mp3' }),
+        const buffer = await new Promise((resolve, reject) => {
+          execFile(ytDlpPath, [
+            url,
+            '--extract-audio',
+            '--no-check-certificates',
+            '--no-warnings',
+            '--quiet',
+            '-o', '-'
+          ], { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
+            if (err && !stdout?.length) {
+              const msg = stderr?.toString()?.split('\n')?.filter(l => l && !l.includes('WARNING'))?.pop() || err.message;
+              reject(new Error(msg));
+            } else {
+              resolve(stdout);
+            }
+          });
         });
-        if (!res.ok) {
-          const errBody = await res.text();
-          console.log('[PLAY] Cobalt error:', res.status, errBody);
-          throw new Error(`Cobalt API ${res.status}: ${errBody}`);
-        }
 
-        const data = await res.json();
-        if (!data.url) throw new Error('No download URL returned');
-
-        const audioRes = await fetch(data.url);
-        if (!audioRes.ok) throw new Error(`Download failed ${audioRes.status}`);
-
-        const buffer = Buffer.from(await audioRes.arrayBuffer());
         if (buffer.length === 0) throw new Error('Empty audio');
-
-        await conn.sendMessage(from, { audio: buffer, mimetype: 'audio/mpeg', ptt: false });
+        await conn.sendMessage(from, { audio: buffer, mimetype: audioMime(buffer), ptt: false });
       } catch (err) {
         throw new Error(`❌ Playback failed: ${err.message}`);
       }

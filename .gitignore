@@ -4,3 +4,6 @@ auth_info/
 cleanup.*
 vv_data.json
 allowed_numbers.json
+
+# ytdl-core player script debug files
+*player-script.js

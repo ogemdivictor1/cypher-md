@@ -175,6 +175,7 @@ All commands are prefixed with `.`. Send to the bot's DM or a group where the bo
 | `.ghost` | — | No | View-once image with custom text |
 | `.monitor` | `.mon` | No | Manage watched numbers |
 | `.aichat` | `.ai` | No | AI management suite |
+| `.play` | `.song`, `.yt`, `.audio` | No | Search & download YouTube audio |
 | `.id` | `.jid` | No | Shows JID of current chat or user |
 | `.tagall` | `.tag`, `.everyone` | No | Tags all group members |
 | `.kick` | — | **Yes** | Remove group member |
@@ -325,6 +326,69 @@ After max attempts, the stale session is purged from the database.
 
 ---
 
+## Audio Download (`.play` / `.song`)
+
+Downloads YouTube audio and sends it as a WhatsApp audio message.
+
+**Search**: Uses `yt-search` for video lookup by name or handles direct YouTube URLs.
+
+**Download**: Uses the `yt-dlp` binary (bundled via `youtube-dl-exec`) spawned via `child_process.execFile`.
+
+**MIME auto-detection**: The raw buffer is inspected for magic bytes to determine the format (`audio/webm` for Opus, `audio/mpeg` for MP3, `audio/mp4` for AAC/M4A), and the correct mimetype is sent.
+
+### ⚠️ The Saga (What Didn't Work First)
+
+YouTube keeps changing their anti-scraping mechanisms. Every library we tried eventually broke:
+
+**Attempt 1 — Cobalt API** (`api.cobalt.tools`)
+- Search worked via `yt-search`. Cobalt returned `400 error.api.auth.jwt.missing`.
+- The public API now requires a JWT auth token (Turnstile) — not usable without self-hosting.
+
+**Attempt 2 — `@distube/ytdl-core`** (`highestaudio`)
+- Audio extracted but immediately failed with `connectionReplaced` at the Baileys layer.
+- Switching to `lowestaudio` still hit `403` — the library couldn't parse YouTube's new player cipher/n-transform functions.
+
+**Attempt 3 — `youtube-dl-exec` / yt-dlp** (raw binary)
+- yt-dlp needed Python at runtime on Render, plus YouTube started requiring a signed-in session.
+- Ran into `"sign in to confirm you're not a bot"` blocks.
+
+**Attempt 4 — `youtubei.js`** (recommended approach)
+- Pure JS InnerTube client — no binary, no cookies. Search worked beautifully.
+- **BUT**: YouTube changed their API response to send `"url": false` and `"cipher": false` for **all** formats. No download URL anywhere.
+- Confirmed by scraping raw `ytInitialPlayerResponse` from the watch page — same result. YouTube now only hands out URLs through ABR segment streaming.
+- `youtubei.js`'s `download()` throws `"No valid URL to decipher"`. Both `@distube/ytdl-core` and `play-dl` hit the same wall.
+
+**Attempt 5 — `play-dl`** (yet another JS extractor)
+- Same fundamental issue: YouTube changed the API response format. All formats returned `url: false`.
+
+### ✅ What Finally Worked
+
+Stick with the **bundled `yt-dlp` binary** (shipped by `youtube-dl-exec`) called via `child_process.execFile`:
+
+```
+yt-dlp.exe <URL> --extract-audio --no-check-certificates --no-warnings --quiet -o -
+```
+
+- yt-dlp handles YouTube's ABR streaming, cipher changes, and format negotiation internally.
+- The `--extract-audio` flag picks the best audio-only stream (Opus in WebM container).
+- Binary output piped to stdout, buffered, MIME-detected, and sent via WhatsApp.
+- Works on Render (Linux binary auto-downloads via `youtube-dl-exec` postinstall).
+- Falls back to `YT_DLP_PATH` env var if the binary is installed elsewhere.
+
+### MIME Detection
+
+```js
+function audioMime(buf) {
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'audio/mpeg';      // MP3
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return 'audio/mpeg';  // ID3
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return 'audio/webm';  // WebM
+  if (ftyp magic) return 'audio/mp4';  // MP4
+  return 'audio/mpeg';  // fallback
+}
+```
+
+---
+
 ## State Persistence
 
 ### WhatsApp Auth State
@@ -370,6 +434,19 @@ Bot state DB functions (`loadBotState`/`saveBotState`) exist in both backends fo
 
 ---
 
+## Why Two Baileys?
+
+The bot uses **two** Baileys packages simultaneously:
+
+| Package | Where | Role |
+|---------|-------|------|
+| `@lordmega/baileys` | `bot.js`, `storage.js` | **Production runtime** — receives all custom patches (LID addressing, VV detection, VV mediatype). Main message processing and command execution runs through this fork. |
+| `@whiskeysockets/baileys` | `pair.js`, `redis.js`, `db.js` | **Pairing & utilities only** — the upstream official package. Used for the pairing code flow, `BufferJSON`, `initAuthCreds`, `Browsers`. Kept clean to avoid re-applying patches in a second location and to prevent pairing from breaking if a patch introduces side effects. |
+
+**The handoff** (`src/pair.js:95-105`): The pairing socket (upstream) generates credentials → saves them → the shared `state` object is passed to the production socket (fork) which picks it up and starts listening for commands. Both never run on the same connection at the same time.
+
+---
+
 ## Custom Patches
 
 Three patches applied to `node_modules/@lordmega/baileys`. Documented in `AGENTS.md`. Must be **re-applied after** `npm update @lordmega/baileys`.
@@ -393,7 +470,7 @@ Unwraps `viewOnceMessage` in `getMediaType()` so `mediatype` is populated for VV
 ```
 ├── src/
 │   ├── server.js              # Express + Socket.IO server, admin, pairing (224 lines)
-│   ├── bot.js                 # Core bot: commands, connection mgmt, anti-x, AI, VV (1831 lines)
+│   ├── bot.js                 # Core bot: commands, connection mgmt, anti-x, AI, VV (1904 lines)
 │   ├── pair.js                # WhatsApp pairing code flow (119 lines)
 │   ├── storage.js             # Unified storage abstraction — auto-detects backend (142 lines)
 │   ├── redis.js               # Upstash Redis auth backend (124 lines)
@@ -442,3 +519,8 @@ DATABASE_URL=postgresql://user:pass@host:5432/dbname
 | `pino` | `bot.js`, `pair.js` | Logging (silent mode) |
 | `@hapi/boom` | `bot.js`, `pair.js` | Error code extraction |
 | `dotenv` | `server.js` | .env file loading |
+| `yt-search` | `bot.js` | YouTube video search |
+| `youtube-dl-exec` | `bot.js` | Bundles `yt-dlp` binary for audio download |
+| `@distube/ytdl-core` | `bot.js` (removed) | Failed: couldn't parse YouTube player cipher |
+| `youtubei.js` | `bot.js` (removed) | Failed: YouTube returns `url: false` for all formats |
+| `play-dl` | `bot.js` (removed) | Failed: same API format issue as youtubei.js |
