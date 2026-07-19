@@ -1237,7 +1237,17 @@ const commands = {
         await conn.sendMessage(from, { text: `⏳ Downloading *${title.replace(/\*/g, '')}*...` });
 
         const args = [url, '--extract-audio', '--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
-        if (process.env.YOUTUBE_COOKIES) args.push('--cookies', process.env.YOUTUBE_COOKIES);
+        if (process.env.YOUTUBE_COOKIES) {
+          const src = process.env.YOUTUBE_COOKIES;
+          try {
+            const raw = require('fs').readFileSync(src, 'utf8');
+            const tmp = require('path').join(require('os').tmpdir(), 'yt-cookies.txt');
+            require('fs').writeFileSync(tmp, raw, 'utf8');
+            args.push('--cookies', tmp);
+          } catch (_) {
+            args.push('--cookies', src);
+          }
+        }
 
         const buffer = await new Promise((resolve, reject) => {
           execFile(ytDlpPath, args, { maxBuffer: 100 * 1024 * 1024, encoding: 'buffer' }, (err, stdout, stderr) => {
