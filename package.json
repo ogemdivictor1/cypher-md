@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node src/server.js",
-    "pair": "node src/pair.js"
+    "pair": "node src/pair.js",
+    "postinstall": "node scripts/download-warp.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
