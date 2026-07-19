@@ -1239,7 +1239,7 @@ const commands = {
         };
 
         const buildArgs = (url, useCookies) => {
-          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-f', 'bestaudio[ext=m4a]/bestaudio/best', '-o', '-'];
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-f', '18/best', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) {
             a.push('--cookies', cp);
