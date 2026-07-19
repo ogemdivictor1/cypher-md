@@ -1239,7 +1239,7 @@ const commands = {
         };
 
         const buildArgs = (url, useCookies) => {
-          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '--extractor-args', 'youtube:player_client=mweb', '-o', '-'];
+          const a = ['--no-check-certificates', '--no-warnings', '--quiet', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) {
             a.push('--cookies', cp);
@@ -1289,7 +1289,31 @@ const commands = {
         if (buffer.length === 0) throw new Error('Empty audio');
         await conn.sendMessage(from, { audio: buffer, mimetype: audioMime(buffer), ptt: false });
       } catch (err) {
-        throw new Error(`❌ Playback failed: ${err.message}`);
+        const ytErr = err.message || '';
+        console.log('[play] yt-dlp failed, trying cobalt...');
+        try {
+          const cobaltRes = await fetch(process.env.COBALT_API || 'https://api.cobalt.tools/', {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, downloadMode: 'audio', audioFormat: 'best', filenameStyle: 'basic' }),
+            signal: AbortSignal.timeout(30000)
+          });
+          if (!cobaltRes.ok) throw new Error(`Cobalt API ${cobaltRes.status}`);
+          const data = await cobaltRes.json();
+          if (data.status === 'tunnel' || data.status === 'redirect') {
+            const audioRes = await fetch(data.url, { signal: AbortSignal.timeout(60000) });
+            if (!audioRes.ok) throw new Error(`Cobalt download ${audioRes.status}`);
+            const audioBuf = Buffer.from(await audioRes.arrayBuffer());
+            if (audioBuf.length > 0) {
+              await conn.sendMessage(from, { audio: audioBuf, mimetype: audioMime(audioBuf), ptt: false });
+              return;
+            }
+          }
+          throw new Error('Cobalt: no audio returned');
+        } catch (cobaltErr) {
+          console.log('[play] cobalt also failed:', cobaltErr.message);
+          throw new Error(`❌ Playback failed: ${ytErr}`);
+        }
       }
     },
     aliases: ['song', 'yt', 'audio'],
