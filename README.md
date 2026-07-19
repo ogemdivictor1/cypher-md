@@ -182,7 +182,7 @@ All commands are prefixed with `.`. Send to the bot's DM or a group where the bo
 | `.tagall` | `.tag`, `.everyone` | No | Tags all group members |
 | `.kick` | — | **Yes** | Remove group member (reply, @mention, or number) |
 | `.ban` | — | **Yes** | Alias for kick |
-| `.warn` | — | **Yes** | Warn user, 3 strikes → kick (reply, @mention, or number) |
+| `.warn` | — | **Yes** | Warn user, 4 strikes → kick (reply, @mention, or number) |
 | `.unwarn` | — | **Yes** | Remove warning (reply, @mention, or number) |
 | `.promote` | `.admin` | **Yes** | Promote to group admin |
 | `.demote` | — | **Yes** | Demote from group admin |

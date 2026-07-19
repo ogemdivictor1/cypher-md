@@ -629,10 +629,10 @@ const commands = {
       const key = `${from}:${target}`;
       const count = (_s.warnings.get(key) || 0) + 1;
       _s.warnings.set(key, count);
-      await conn.sendMessage(from, { text: `⚔️ Warned @${target.split('@')[0]} (${count}/3)`, mentions: [target] });
-      if (count >= 3) {
+      await conn.sendMessage(from, { text: `⚔️ Warned @${target.split('@')[0]} (${count}/4)`, mentions: [target] });
+      if (count >= 4) {
         await conn.groupParticipantsUpdate(from, [target], 'remove');
-        await conn.sendMessage(from, { text: `🔨 Auto-kicked @${target.split('@')[0]} after 3 warnings OTILO!`, mentions: [target] });
+        await conn.sendMessage(from, { text: `🔨 Auto-kicked @${target.split('@')[0]} after 4 warnings OTILO!`, mentions: [target] });
         _s.warnings.delete(key);
       }
     },
@@ -1173,7 +1173,7 @@ const commands = {
         `🛡️ *GROUP MANAGEMENT (Admin only)*\n\n` +
         `These commands only work in groups where I'm an admin, and only for you:\n\n` +
         `• *.kick* — Remove a member from the group. Reply to their message or use .kick @mention.\n` +
-        `• *.warn* — Issue a warning to a member. 3 warnings = auto-kick.\n` +
+        `• *.warn* — Issue a warning to a member. 4 warnings = auto-kick.\n` +
         `• *.unwarn* — Remove a warning from a member. Resets their warning count.\n` +
         `• *.ban* — Ban a member. Alias for remove. Same as .kick.\n` +
         `• *.delete* — Delete a message I sent. Reply to my message with .delete.\n` +
