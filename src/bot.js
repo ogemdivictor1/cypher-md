@@ -1262,18 +1262,20 @@ const commands = {
         let buffer;
 
         for (const useCookies of [true, false]) {
-          if (useCookies && !fs.existsSync(cookiesSrc)) {
-            logger.debug('No cookies file found, skipping cookie attempt');
+          const cookieFileExists = fs.existsSync(cookiesSrc);
+          if (useCookies && !cookieFileExists) {
+            console.log('[play] no cookies file at', cookiesSrc);
             continue;
           }
+          console.log('[play] attempt useCookies=%s cookiesExist=%s', useCookies, cookieFileExists);
           const a = buildArgs(url, useCookies);
-          logger.debug({ useCookies, args: a.join(' ') }, 'yt-dlp attempt');
           try {
             buffer = await exec(a, useCookies);
+            console.log('[play] success with useCookies=%s', useCookies);
             break;
           } catch (e) {
             const msg = e.error?.message || '';
-            logger.debug({ err: msg, useCookies, stderr: e.stderr }, 'yt-dlp attempt failed');
+            console.log('[play] failed useCookies=%s error=%s', useCookies, msg);
             const isRetryable = /sign in|confirm you.*bot|requested format not available/i.test(msg);
             if (!isRetryable || !useCookies) throw e.error;
           }
