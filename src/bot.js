@@ -1240,7 +1240,6 @@ const commands = {
 
         const buildArgs = (url, useCookies) => {
           const a = ['--no-check-certificates', '--no-warnings', '--quiet',
-            '--extractor-args', 'youtube:player_client=web,web_safari',
             '--force-ipv4', '-S', 'res:360', '-o', '-'];
           const cp = useCookies ? getCookiesPath() : null;
           if (cp) a.push('--cookies', cp);
