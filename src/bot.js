@@ -1227,7 +1227,6 @@ const commands = {
 
         const args = [
           '--no-check-certificates', '--no-warnings', '--quiet',
-          '--extractor-args', 'youtube:player_client=android',
           '-f', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/18/best',
           '-o', '-',
           url
